@@ -527,7 +527,7 @@ describe('buildAttentionByWorktree', () => {
       [w],
       { [w.id]: [tab] },
       {},
-      { [tab.id]: { 1: '✋ Gemini CLI' } },
+      { [tab.id]: { 1: 'Codex · action required' } },
       ptyMap([tab.id]),
       NOW
     )
@@ -591,7 +591,7 @@ describe('buildAttentionByWorktree', () => {
           restoredUnconfirmed: true
         })
       },
-      { [tab.id]: { 1: '⠋ Claude', 2: '✋ Gemini CLI' } },
+      { [tab.id]: { 1: '⠋ Claude', 2: 'Codex · action required' } },
       ptyMap([tab.id]),
       NOW,
       undefined,
@@ -641,7 +641,7 @@ describe('buildAttentionByWorktree', () => {
           updatedAt: NOW - AGENT_STATUS_STALE_AFTER_MS - 1
         })
       },
-      { [tab.id]: { 1: '✋ Gemini CLI' } },
+      { [tab.id]: { 1: 'Codex · action required' } },
       ptyMap([tab.id]),
       NOW
     )
@@ -669,7 +669,7 @@ describe('buildAttentionByWorktree', () => {
       { [w.id]: [tab] },
       entries,
       // Pane 2 has no hook — title fallback fires for it.
-      { [tab.id]: { 1: 'something', 2: '✋ Gemini CLI' } },
+      { [tab.id]: { 1: 'something', 2: 'Codex · action required' } },
       ptyMap([tab.id]),
       NOW,
       undefined,
@@ -692,7 +692,7 @@ describe('buildAttentionByWorktree', () => {
       [w],
       { [w.id]: [tab] },
       {},
-      { [tab.id]: { 1: '✋ Gemini CLI' } },
+      { [tab.id]: { 1: 'Codex · action required' } },
       // No live pty for this tab.
       {},
       NOW
