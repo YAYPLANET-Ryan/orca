@@ -59,6 +59,9 @@ const devChannelRepo = isHourlyChannel
     : isAdhocChannel
       ? 'orca-adhoc'
       : null
+// Custom GitHub feeds are not SignPath-signed, so updater verification must not
+// advertise the official publisher for builds produced by this workflow.
+const isCustomUpdateFeed = Boolean(process.env.ORCA_UPDATE_OWNER || process.env.ORCA_UPDATE_REPO)
 const appId = 'com.stablyai.orca'
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
@@ -321,7 +324,7 @@ module.exports = {
     // Why: Windows installers are signed after electron-builder packaging by
     // SignPath, so the packager cannot infer the updater publisherName.
     //
-    // Why dev channels drop it instead: they ship unsigned, because SignPath's
+    // Why dev channels and custom feeds drop it instead: they ship unsigned, because SignPath's
     // approval waits are budgeted in hours and cannot fit an hourly cadence.
     // electron-updater Authenticode-verifies every installer it downloads
     // against the publisherName baked into the *installed* app's app-update.yml
@@ -329,7 +332,7 @@ module.exports = {
     // name is absent. An unsigned build that still claimed 'SignPath Foundation'
     // would therefore reject its own channel's next build — and its way back to
     // stable with it. Dropping it is what makes dev→dev and dev→stable work.
-    ...(isWinDevChannel
+    ...(isWinDevChannel || isCustomUpdateFeed
       ? { verifyUpdateCodeSignature: false }
       : { signtoolOptions: { publisherName: 'SignPath Foundation' } }),
     extraResources: [
