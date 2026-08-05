@@ -8,17 +8,7 @@ import {
   CLAUDE_MODEL_LIST_STDIN,
   parseClaudeModelList
 } from './claude-model-list-probe'
-
-function hasFlag(tokens: readonly string[], flags: readonly string[]): boolean {
-  return tokens.some((token) =>
-    flags.some(
-      (flag) =>
-        token === flag ||
-        token.startsWith(`${flag}=`) ||
-        (flag.startsWith('-') && !flag.startsWith('--') && token.startsWith(flag))
-    )
-  )
-}
+import { hasFlag } from './agent-cli-flag-detection'
 
 function hasCodexEffortOverride(tokens: readonly string[]): boolean {
   if (hasFlag(tokens, ['--reasoning-effort'])) {
