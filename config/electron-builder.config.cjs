@@ -35,6 +35,7 @@ const isMacRelease = process.env.ORCA_MAC_RELEASE === '1' || isMacHourly || isMa
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
 const localBuildVersion =
   isMacRelease || isWinDevChannel ? undefined : process.env.ORCA_LOCAL_BUILD_VERSION
+const releaseBuildVersion = process.env.ORCA_RELEASE_VERSION
 const isHourlyChannel = isMacHourly || isWinHourly
 const isDailyChannel = isMacDaily || isWinDaily
 const isAdhocChannel = isMacAdhoc || isWinAdhoc
@@ -56,8 +57,11 @@ const devChannelRepo = isHourlyChannel
   : isDailyChannel
     ? 'orca-daily'
     : isAdhocChannel
-      ? 'orca-adhoc'
-      : null
+    ? 'orca-adhoc'
+    : null
+// Custom GitHub feeds are not SignPath-signed, so updater verification must not
+// advertise the official publisher for builds produced by this workflow.
+const isCustomUpdateFeed = Boolean(process.env.ORCA_UPDATE_OWNER || process.env.ORCA_UPDATE_REPO)
 const appId = 'com.stablyai.orca'
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
@@ -107,9 +111,11 @@ module.exports = {
   protocols: [{ name: 'Orca', schemes: ['orca'] }],
   ...(devChannelBuildVersion
     ? { extraMetadata: { version: devChannelBuildVersion } }
-    : localBuildVersion
-      ? { extraMetadata: { version: localBuildVersion } }
-      : {}),
+    : releaseBuildVersion
+      ? { extraMetadata: { version: releaseBuildVersion } }
+      : localBuildVersion
+        ? { extraMetadata: { version: localBuildVersion } }
+        : {}),
   directories: {
     buildResources: 'resources/build'
   },
@@ -326,7 +332,7 @@ module.exports = {
     // name is absent. An unsigned build that still claimed 'SignPath Foundation'
     // would therefore reject its own channel's next build — and its way back to
     // stable with it. Dropping it is what makes dev→dev and dev→stable work.
-    ...(isWinDevChannel
+    ...(isWinDevChannel || isCustomUpdateFeed
       ? { verifyUpdateCodeSignature: false }
       : { signtoolOptions: { publisherName: 'SignPath Foundation' } }),
     extraResources: [
