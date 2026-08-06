@@ -1,0 +1,65 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout custom branch
+        uses: actions/checkout@v4
+        with:
+          ref: ryan/ceo-office-sidebar
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/stablyai/orca.git
+          git fetch upstream main --quiet
+
+      - name: Compare upstream
+        id: compare
+        run: |
+          if git diff --quiet HEAD upstream/main; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          git config user.name "upstream-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge --no-edit upstream/main; then
+            echo "merge_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge_ok=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: merge
+
+      - name: Push merged branch
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok == 'true'
+        run: git push origin HEAD:ryan/ceo-office-sidebar
+
+      - name: Trigger custom release
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run custom-windows-release.yml --repo "$GITHUB_REPOSITORY" --ref ryan/ceo-office-sidebar
+
+      - name: Report conflict
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok != 'true'
+        run: |
+          echo "::warning::Upstream merge conflict on ryan/ceo-office-sidebar. Manual resolution required."
