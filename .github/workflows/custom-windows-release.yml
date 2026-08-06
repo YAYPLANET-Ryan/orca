@@ -1,0 +1,115 @@
+name: Custom Windows Release
+
+on:
+  push:
+    branches: [ryan/ceo-office-sidebar]
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.4.175-ceo.20260806.1)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: custom-windows-release
+  cancel-in-progress: false
+
+env:
+  ORCA_UPDATE_OWNER: YAYPLANET-Ryan
+  ORCA_UPDATE_REPO: orca
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout custom branch
+        uses: actions/checkout@v4
+        with:
+          ref: ryan/ceo-office-sidebar
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        shell: pwsh
+        run: corepack enable
+
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
+
+      - name: Resolve release version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if ($env:INPUT_VERSION) {
+            $version = $env:INPUT_VERSION
+          } else {
+            $base = node -p "require('./package.json').version.split('-')[0]"
+            $date = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
+            $version = "$base-ceo.$date.$env:RUN_NUMBER"
+          }
+          "ORCA_RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "Resolved release version: $version"
+
+      - name: Build desktop
+        shell: pwsh
+        run: pnpm run build:desktop
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          pnpm run ensure:electron-runtime
+          pnpm exec electron-builder --config config/electron-builder.config.cjs --win --publish never
+
+      - name: Verify assets
+        shell: pwsh
+        run: |
+          $assets = @(
+            "dist/orca-windows-setup.exe",
+            "dist/orca-windows-setup.exe.blockmap",
+            "dist/latest.yml"
+          )
+          $missing = @()
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset)) {
+              $missing += $asset
+            } else {
+              Write-Host "Found: $asset ($((Get-Item $asset).Length) bytes)"
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "##[error]Missing assets: $($missing -join ', ')"
+            Write-Host "##[error]Contents of dist/:"
+            Get-ChildItem dist -Recurse | ForEach-Object { Write-Host "  $($_.FullName) ($($_.Length) bytes)" }
+            exit 1
+          }
+
+      - name: Publish Windows release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v$env:ORCA_RELEASE_VERSION"
+          $assets = @(
+            "dist/orca-windows-setup.exe",
+            "dist/orca-windows-setup.exe.blockmap",
+            "dist/latest.yml"
+          )
+          gh release create $tag @assets `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --target "$env:GITHUB_SHA" `
+            --title $env:ORCA_RELEASE_VERSION `
+            --notes "Custom Orca Windows build with CEO Office sidebar."
+          Write-Host "##[notice]Published: $tag"
