@@ -326,7 +326,9 @@ describe('buildAgentDraftLaunchPlan', () => {
       launchCommand: 'pi; unset ORCA_PI_PREFILL',
       expectedProcess: 'pi',
       env: { ORCA_PI_PREFILL: 'https://github.com/acme/repo/issues/42' },
-      launchConfig: emptyLaunchConfig('pi')
+      launchConfig: emptyLaunchConfig('pi'),
+      // Why: pi's launch must wait for the shell prompt or slow prompt setups swallow it (STA-3417).
+      startupCommandDelivery: 'shell-ready'
     })
   })
 

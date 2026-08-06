@@ -1,6 +1,31 @@
 import { recognizeAgentProcessFromCommandLine } from './agent-process-recognition'
+import type { TuiAgent } from './types'
 
 export type StartupCommandDelivery = 'fast' | 'shell-ready'
+
+/** Agents whose launch command must wait for the shell prompt: slow prompt
+ * integrations like Starship can still be initializing past the first output,
+ * so an eagerly delivered command is rendered but never executed (STA-3417). */
+const SHELL_READY_DELIVERY_AGENTS: ReadonlySet<TuiAgent> = new Set([
+  'codex',
+  'omp',
+  'pi',
+  'opencode'
+])
+
+/** `bareLaunch` excludes plain Codex: payload-free Codex deliberately keeps the
+ * markerless fast startup path (see local-pty-provider / daemon pty-subprocess). */
+export function shellReadyDeliveryProps(
+  agent: TuiAgent,
+  opts?: { bareLaunch?: boolean }
+): { startupCommandDelivery?: StartupCommandDelivery } {
+  if (opts?.bareLaunch && agent === 'codex') {
+    return {}
+  }
+  return SHELL_READY_DELIVERY_AGENTS.has(agent)
+    ? { startupCommandDelivery: 'shell-ready' as const }
+    : {}
+}
 
 type CommandToken = {
   value: string

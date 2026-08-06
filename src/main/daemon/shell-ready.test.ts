@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type * as ShellReadyModule from './shell-ready'
 import { getZshShellReadyMarkerRegistrationBlock } from '../shell-templates'
 
@@ -16,6 +16,8 @@ const hasBash = process.platform !== 'win32' && spawnSync('bash', ['--version'])
 const itWithBash = hasBash ? it : it.skip
 const hasZsh = process.platform !== 'win32' && spawnSync('zsh', ['--version']).status === 0
 const itWithZsh = hasZsh ? it : it.skip
+const hasFish = process.platform !== 'win32' && spawnSync('fish', ['--version']).status === 0
+const itWithFish = hasFish ? it : it.skip
 
 const SHELL_READY_MARKER_OUTPUT = '\x1b]777;orca-shell-ready\x07'
 
@@ -208,6 +210,101 @@ describePosix('daemon shell-ready launch config', () => {
     expect(config.env.ZDOTDIR).toBe(join(userDataPath, 'shell-ready', 'zsh'))
     expect(existsSync(join(userDataPath, 'shell-ready', 'zsh', '.zshenv'))).toBe(true)
   })
+
+  it('extends the startup barrier to fish so launch commands queue until the prompt', async () => {
+    const { shellPathSupportsPtyStartupBarrier, supportsPtyStartupBarrier } =
+      await importFreshShellReady()
+
+    expect(shellPathSupportsPtyStartupBarrier('/opt/homebrew/bin/fish')).toBe(true)
+    expect(supportsPtyStartupBarrier({ SHELL: '/usr/local/bin/fish' })).toBe(true)
+    // Why: unwrapped shells must stay off the barrier or their first command queues forever.
+    expect(shellPathSupportsPtyStartupBarrier('/usr/bin/tcsh')).toBe(false)
+  })
+
+  it('wraps fish launches with a fish_prompt shell-ready marker init command', async () => {
+    const { getShellReadyLaunchConfig } = await importFreshShellReady()
+
+    const config = getShellReadyLaunchConfig('/opt/homebrew/bin/fish')
+
+    expect(config.supportsReadyMarker).toBe(true)
+    expect(config.env).toEqual({ ORCA_SHELL_READY_MARKER: '1' })
+    expect(config.args?.slice(0, 2)).toEqual(['-l', '-C'])
+    const init = config.args?.[2] ?? ''
+    expect(init).toContain('--on-event fish_prompt')
+    expect(init).toContain('printf "\\033]777;orca-shell-ready\\007"')
+    // Why: the marker must fire once; a repeating marker would corrupt later output scans.
+    expect(init).toContain('functions -e __orca_shell_ready_marker')
+  })
+
+  it('keeps attribution-only fish spawns unwrapped', async () => {
+    const { getAttributionShellLaunchConfig } = await importFreshShellReady()
+
+    const config = getAttributionShellLaunchConfig('/opt/homebrew/bin/fish')
+
+    expect(config).toEqual({ args: null, env: {}, supportsReadyMarker: false })
+  })
+
+  itWithFish(
+    'emits the marker at the first real fish prompt and executes a post-marker command',
+    async () => {
+      const { getShellReadyLaunchConfig } = await importFreshShellReady()
+      const config = getShellReadyLaunchConfig('fish')
+      const tempHome = mkdtempSync(join(tmpdir(), 'fish-shell-ready-'))
+      const sentinel = join(tempHome, 'launched')
+      try {
+        mkdirSync(join(tempHome, '.config', 'fish'), { recursive: true })
+        // Why: mimic a slow prompt integration (Starship) — init work before the first prompt.
+        writeFileSync(
+          join(tempHome, '.config', 'fish', 'config.fish'),
+          'command sleep 0.2\nfunction fish_prompt\n  printf "> "\nend\n'
+        )
+        const pty = await import('node-pty')
+        const proc = pty.spawn('fish', config.args ?? [], {
+          name: 'xterm-256color',
+          cols: 80,
+          rows: 24,
+          cwd: tempHome,
+          env: {
+            PATH: process.env.PATH ?? '/usr/bin:/bin',
+            HOME: tempHome,
+            TERM: 'xterm-256color',
+            ...config.env
+          }
+        })
+        let output = ''
+        let commandWritten = false
+        let settle = (): void => {}
+        const done = new Promise<void>((resolve) => {
+          settle = resolve
+        })
+        const deadline = setTimeout(settle, 10_000)
+        const sentinelPoll = setInterval(() => {
+          if (commandWritten && existsSync(sentinel)) {
+            settle()
+          }
+        }, 50)
+        proc.onData((chunk) => {
+          output += chunk
+          if (!commandWritten && output.includes(SHELL_READY_MARKER_OUTPUT)) {
+            commandWritten = true
+            // Why: mirror PostReadyFlushGate — flush shortly after the post-marker prompt draw.
+            setTimeout(() => proc.write(`touch ${sentinel}\n`), 50)
+          }
+        })
+        await done
+        clearTimeout(deadline)
+        clearInterval(sentinelPoll)
+        proc.kill()
+
+        expect(output).toContain(SHELL_READY_MARKER_OUTPUT)
+        expect(output.split(SHELL_READY_MARKER_OUTPUT)).toHaveLength(2)
+        expect(existsSync(sentinel)).toBe(true)
+      } finally {
+        rmSync(tempHome, { recursive: true, force: true })
+      }
+    },
+    15_000
+  )
 
   it('falls back to HOME for ORCA_ORIG_ZDOTDIR when inherited ZDOTDIR points at a wrapper dir', async () => {
     // Why: an Orca-PTY parent has ZDOTDIR=.../shell-ready/zsh; propagating it makes the wrapper source itself (recursion loop).

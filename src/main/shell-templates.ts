@@ -160,6 +160,20 @@ fi
 `
 }
 
+// Why: fish has no ZDOTDIR-style wrapper dir; `--init-command` runs after
+// config.fish, and the fish_prompt event fires as the first prompt draws — the
+// earliest point fish's own reader owns the PTY (mirrors zsh's zle-line-init
+// marker). Without it, startup commands are written while fish/Starship are
+// still initializing and the shell never executes them (STA-3417).
+export function getFishShellReadyInitCommand(escapedMarker: string): string {
+  return `if test "$ORCA_SHELL_READY_MARKER" = 1
+  function __orca_shell_ready_marker --on-event fish_prompt
+    printf "${escapedMarker}"
+    functions -e __orca_shell_ready_marker
+  end
+end`
+}
+
 export function getZshFinalZdotdirRestoreBlock(homeExpression = '"${ORCA_ORIG_ZDOTDIR:-$HOME}"') {
   return `_orca_home=${homeExpression}
 case "\${_orca_home%/}" in

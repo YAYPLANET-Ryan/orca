@@ -12,6 +12,7 @@ import {
 } from '../powershell-osc133-bootstrap'
 import { getPosixOmpShellWrapper } from '../pty/omp-shell-wrapper'
 import {
+  getFishShellReadyInitCommand,
   getZshEnvTemplate,
   getZshFinalZdotdirRestoreBlock,
   getZshShellReadyMarkerRegistrationBlock,
@@ -350,7 +351,10 @@ export function resolvePtyShellPath(env: Record<string, string>): string {
 
 export function shellPathSupportsPtyStartupBarrier(shellPath: string): boolean {
   const shellName = pathWin32.basename(basename(shellPath)).toLowerCase()
-  return shellName === 'zsh' || shellName === 'bash'
+  // Why fish: without the barrier the startup command is written at spawn time,
+  // before fish's reader owns the PTY, and the launch is lost under slow prompt
+  // integrations like Starship (STA-3417).
+  return shellName === 'zsh' || shellName === 'bash' || shellName === 'fish'
 }
 
 export function supportsPtyStartupBarrier(env: Record<string, string>): boolean {
@@ -409,6 +413,17 @@ function getWrappedShellLaunchConfig(
       ],
       env: {},
       supportsReadyMarker: false
+    }
+  }
+
+  // Why: mirrors local-pty-shell-ready.ts — markerless fish loses startup
+  // commands written before its reader owns the PTY (STA-3417). Attribution-only
+  // fish spawns stay unwrapped.
+  if (shellName === 'fish' && options.emitReadyMarker) {
+    return {
+      args: ['-l', '-C', getFishShellReadyInitCommand(SHELL_READY_MARKER)],
+      env: { ORCA_SHELL_READY_MARKER: '1' },
+      supportsReadyMarker: true
     }
   }
 

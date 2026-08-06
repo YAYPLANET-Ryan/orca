@@ -13,7 +13,7 @@ import {
   type AgentStartupShell
 } from './tui-agent-startup-shell'
 import { TUI_AGENT_CONFIG } from './tui-agent-config'
-import type { StartupCommandDelivery } from './codex-startup-delivery'
+import { shellReadyDeliveryProps, type StartupCommandDelivery } from './codex-startup-delivery'
 import { buildSleepingAgentLaunchConfig } from './sleeping-agent-launch-config'
 import { planHermesStartupQuery } from './hermes-startup-query'
 import { inlineAgentDraftFitsPlatform } from './agent-draft-platform-limit'
@@ -91,6 +91,7 @@ export function buildAgentStartupPlan(args: {
       followupPrompt: null,
       launchConfig,
       ...appliedSessionOptionProps(baseCommand.appliedSessionOptions),
+      ...shellReadyDeliveryProps(agent, { bareLaunch: true }),
       ...(args.agentEnv ? { env: { ...args.agentEnv } } : {})
     }
   }
@@ -106,7 +107,7 @@ export function buildAgentStartupPlan(args: {
       followupPrompt: null,
       launchConfig,
       ...appliedSessionOptionProps(baseCommand.appliedSessionOptions),
-      ...(agent === 'codex' ? { startupCommandDelivery: 'shell-ready' as const } : {}),
+      ...shellReadyDeliveryProps(agent),
       ...(args.agentEnv ? { env: { ...args.agentEnv } } : {})
     }
   }
@@ -119,6 +120,7 @@ export function buildAgentStartupPlan(args: {
       followupPrompt: null,
       launchConfig,
       ...appliedSessionOptionProps(baseCommand.appliedSessionOptions),
+      ...shellReadyDeliveryProps(agent),
       ...(args.agentEnv ? { env: { ...args.agentEnv } } : {})
     }
   }
@@ -237,15 +239,10 @@ export function buildAgentResumeStartupPlan(args: {
   }
 }
 
-export type AgentDraftLaunchPlan = {
-  agent: TuiAgent
-  launchCommand: string
-  expectedProcess: string
-  launchConfig: SleepingAgentLaunchConfig
-  env?: Record<string, string>
-  startupCommandDelivery?: StartupCommandDelivery
-  sessionOptions?: Record<string, SessionOptionValue>
-}
+export type AgentDraftLaunchPlan = Omit<
+  AgentStartupPlan,
+  'followupPrompt' | 'launchToken' | 'draftPrompt'
+>
 
 export function buildAgentDraftLaunchPlan(args: {
   agent: TuiAgent
@@ -293,7 +290,7 @@ export function buildAgentDraftLaunchPlan(args: {
       launchConfig,
       ...appliedSessionOptionProps(baseCommand.appliedSessionOptions),
       // Why: native draft flags carry user text on argv and must survive rc-file startup.
-      ...(agent === 'codex' ? { startupCommandDelivery: 'shell-ready' as const } : {}),
+      ...shellReadyDeliveryProps(agent),
       ...(args.agentEnv ? { env: { ...args.agentEnv } } : {})
     }
   } else if (config.draftPromptEnvVar) {
@@ -304,6 +301,7 @@ export function buildAgentDraftLaunchPlan(args: {
       expectedProcess: config.expectedProcess,
       launchConfig,
       ...appliedSessionOptionProps(baseCommand.appliedSessionOptions),
+      ...shellReadyDeliveryProps(agent),
       env: { ...args.agentEnv, [config.draftPromptEnvVar]: trimmed }
     }
   }

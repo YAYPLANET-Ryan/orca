@@ -17,6 +17,7 @@ import {
 import { getPosixOmpShellWrapper } from '../pty/omp-shell-wrapper'
 import { buildStartupCommandSubmission } from '../../shared/startup-command-submission'
 import {
+  getFishShellReadyInitCommand,
   getZshEnvTemplate,
   getZshFinalZdotdirRestoreBlock,
   getZshShellReadyMarkerRegistrationBlock,
@@ -394,6 +395,17 @@ function getWrappedShellLaunchConfig(
       ],
       env: {},
       supportsReadyMarker: false
+    }
+  }
+
+  // Why: without a marker, fish startup commands are blind-written while
+  // fish/Starship still initialize and the launch is lost (STA-3417). Only the
+  // marker case is wrapped; attribution-only fish spawns stay unwrapped.
+  if (shellName === 'fish' && options.emitReadyMarker) {
+    return {
+      args: ['-l', '-C', getFishShellReadyInitCommand(SHELL_READY_MARKER_ESCAPED)],
+      env: { ORCA_SHELL_READY_MARKER: '1' },
+      supportsReadyMarker: true
     }
   }
 
