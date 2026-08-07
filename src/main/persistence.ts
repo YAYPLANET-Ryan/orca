@@ -109,6 +109,8 @@ import {
   type SshTarget
 } from '../shared/ssh-types'
 import { isFolderRepo } from '../shared/repo-kind'
+import { recordDurableCrashBreadcrumb } from './crash-reporting/durable-crash-breadcrumb'
+import type { ProjectRemovalReason } from '../shared/project-removal-reason'
 import {
   getRepoExecutionHostId,
   parseExecutionHostId,
@@ -4684,7 +4686,23 @@ export class Store {
     return true
   }
 
-  removeProject(id: string): void {
+  // Why `reason`: removing a project drops the repo row, its project, its host
+  // setup, every worktree meta beneath it, and the terminal history behind those
+  // — and it left no trace of any kind. On 2026-08-07 a registered folder
+  // workspace vanished and the logs could not answer whether a person clicked
+  // Remove, an RPC caller invoked repo.rm, or a failed setup rolled itself back.
+  // Worktree removal already emits `worktree.remove.*`; this emitted nothing.
+  removeProject(id: string, reason: ProjectRemovalReason = 'unspecified'): void {
+    const removed = this.state.repos.find((r) => r.id === id)
+    recordDurableCrashBreadcrumb('project.remove', {
+      repoId: id,
+      reason,
+      path: removed?.path ?? '(unknown)',
+      kind: removed?.kind ?? '(unknown)',
+      worktreeMetaCount: Object.keys(this.state.worktreeMeta).filter((key) =>
+        key.startsWith(`${id}::`)
+      ).length
+    })
     this.state.repos = this.state.repos.filter((r) => r.id !== id)
     this.syncProjectHostSetupCompatibilityState()
     // Why: presets are repo-scoped and unreachable once the repo is gone, so drop them with it.
@@ -4699,7 +4717,25 @@ export class Store {
   }
 
   // Why: the same repo id can exist on multiple execution hosts; remove only this host's row and metadata, never another host's.
-  removeProjectForHost(id: string, hostId: ExecutionHostId): void {
+  removeProjectForHost(
+    id: string,
+    hostId: ExecutionHostId,
+    reason: ProjectRemovalReason = 'unspecified'
+  ): void {
+    const removed = this.state.repos.find(
+      (r) => r.id === id && getRepoExecutionHostId(r) === hostId
+    )
+    // Same audit record as removeProject; this is the other way a project row leaves.
+    recordDurableCrashBreadcrumb('project.remove', {
+      repoId: id,
+      reason,
+      hostId,
+      path: removed?.path ?? '(unknown)',
+      kind: removed?.kind ?? '(unknown)',
+      worktreeMetaCount: Object.keys(this.state.worktreeMeta).filter((key) =>
+        key.startsWith(`${id}::`)
+      ).length
+    })
     this.state.repos = this.state.repos.filter(
       (r) => !(r.id === id && getRepoExecutionHostId(r) === hostId)
     )

@@ -1448,7 +1448,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
       } catch (err) {
         // Why: an import that cannot be linked must not leave a new repo registration or authorization root behind.
         if (!result.alreadyExisted) {
-          store.removeProject(result.repo.id)
+          store.removeProject(result.repo.id, 'setup-rollback')
           invalidateAuthorizedRootsCache()
         }
         throw err
@@ -2058,7 +2058,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   )
 
   ipcMain.handle('repos:remove', async (_event, args: { repoId: string }) => {
-    store.removeProject(args.repoId)
+    store.removeProject(args.repoId, 'settings-ui')
     invalidateAuthorizedRootsCache()
     notifyReposChanged(mainWindow)
   })
@@ -2071,7 +2071,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
       if (!hostId) {
         throw new Error(`Invalid host ID: ${args.hostId}`)
       }
-      store.removeProjectForHost(args.repoId, hostId)
+      store.removeProjectForHost(args.repoId, hostId, 'settings-ui')
       invalidateAuthorizedRootsCache()
       notifyReposChanged(mainWindow)
     }

@@ -9,6 +9,20 @@ const RepoSelector = z.object({
   repo: requiredString('Missing repo selector')
 })
 
+// Why a separate schema from RepoSelector: Settings > Repositories puts project
+// removal behind a two-click confirm, but this RPC had none — and it is not a
+// soft delete. It drops the repo row, its project, its host setup, every worktree
+// meta beneath it, and the terminal history behind those, with no undo. Agents and
+// scripts reach this path, so the guard has to live in the schema rather than in a
+// UI affordance they never see.
+const RepoRemove = z.object({
+  repo: requiredString('Missing repo selector'),
+  confirm: z.unknown().refine((value) => value === true, {
+    message:
+      'repo.rm requires confirm: true. Removing a project deletes its workspaces and terminal history and cannot be undone.'
+  })
+})
+
 const RepoPath = z.object({
   path: requiredString('Missing repo path'),
   kind: z.enum(['git', 'folder']).optional()
@@ -216,7 +230,7 @@ export const REPO_METHODS: RpcMethod[] = [
   }),
   defineMethod({
     name: 'repo.rm',
-    params: RepoSelector,
+    params: RepoRemove,
     handler: async (params, { runtime }) => runtime.removeProject(params.repo)
   }),
   defineMethod({
