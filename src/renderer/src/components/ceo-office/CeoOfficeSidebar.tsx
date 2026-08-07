@@ -13,6 +13,7 @@ import { joinPath } from '@/lib/path'
 import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import { cn } from '@/lib/utils'
 import { parseCeoOfficeManifest, type CeoOfficeManifest } from './ceo-office-manifest'
+import { resolveCeoOfficeNavigation } from './ceo-office-navigation'
 
 const MANIFEST_PATH = '.orca/ceo-office.json'
 
@@ -69,6 +70,7 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
   const activePtyId = useAppStore((s) =>
     s.activeTabId ? s.ptyIdsByTabId[s.activeTabId]?.[0] : undefined
   )
+  const createTab = useAppStore((s) => s.createTab)
   const [manifest, setManifest] = React.useState<CeoOfficeManifest | null>(DEFAULT_MANIFEST)
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
 
@@ -107,13 +109,24 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
     return null
   }
   const openManifestItem = async (item: CeoOfficeManifest['groups'][number]['items'][number]) => {
-    const itemPath = joinPath(workspaceRoot ?? activeWorktree.path, item.path)
-    const escapedPath = itemPath.replaceAll("'", "''")
-    if (connectionId && activePtyId?.startsWith(`ssh:${connectionId}@@`)) {
-      window.api.pty.write(activePtyId, `Set-Location -LiteralPath '${escapedPath}'\r`)
+    const action = resolveCeoOfficeNavigation({
+      itemPath: joinPath(workspaceRoot ?? activeWorktree.path, item.path),
+      worktreeId: activeWorktree.id,
+      connectionId,
+      activePtyId
+    })
+    if (action.kind === 'ssh-cd') {
+      window.api.pty.write(action.ptyId, action.command)
       return
     }
-    throw new Error('Open the DESKTOP ORCA SSH terminal before using CEO Office navigation.')
+    // Always spawn a new tab, even when one already sits in that folder: returning
+    // to a business folder usually means starting a second line of work beside the
+    // first, not resuming the one already open.
+    createTab(action.worktreeId, undefined, undefined, {
+      startupCwd: action.startupCwd,
+      activate: true,
+      recordInteraction: true
+    })
   }
 
   return (
