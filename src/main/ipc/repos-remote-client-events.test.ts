@@ -88,7 +88,7 @@ describe('repo IPC mutations notify paired clients', () => {
 
     await handlers.get('repos:removeForHost')!(null, { repoId: 'repo-1', hostId: 'ssh:host-1' })
 
-    expect(mockStore.removeProjectForHost).toHaveBeenCalledWith('repo-1', 'ssh:host-1')
+    expect(mockStore.removeProjectForHost).toHaveBeenCalledWith('repo-1', 'ssh:host-1', 'settings-ui')
     expect(notify).toHaveBeenCalledTimes(1)
   })
 

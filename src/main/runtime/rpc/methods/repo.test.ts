@@ -538,4 +538,55 @@ describe('repo RPC methods', () => {
       result: { importedCount: 1, failedCount: 0 }
     })
   })
+
+  // Settings > Repositories puts project removal behind a two-click confirm.
+  // This path had none, and it is not a soft delete: the repo row, its project,
+  // its host setup, every worktree meta beneath it, and the terminal history
+  // behind those all go, with no undo.
+  it('rejects repo.rm without an explicit confirm', async () => {
+    const removeProject = vi.fn().mockResolvedValue({ removed: true })
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      removeProject
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(makeRequest('repo.rm', { repo: 'repo-1' }))
+
+    expect(removeProject).not.toHaveBeenCalled()
+    expect(response).toMatchObject({ ok: false })
+  })
+
+  it('rejects repo.rm when confirm is not exactly true', async () => {
+    const removeProject = vi.fn().mockResolvedValue({ removed: true })
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      removeProject
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    for (const confirm of ['true', 1, {}, null]) {
+      const response = await dispatcher.dispatch(
+        makeRequest('repo.rm', { repo: 'repo-1', confirm })
+      )
+      expect(response).toMatchObject({ ok: false })
+    }
+    expect(removeProject).not.toHaveBeenCalled()
+  })
+
+  it('removes the project when confirm is true', async () => {
+    const removeProject = vi.fn().mockResolvedValue({ removed: true })
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      removeProject
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('repo.rm', { repo: 'repo-1', confirm: true })
+    )
+
+    expect(removeProject).toHaveBeenCalledWith('repo-1')
+    expect(response).toMatchObject({ ok: true, result: { removed: true } })
+  })
 })

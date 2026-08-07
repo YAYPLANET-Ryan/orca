@@ -2133,7 +2133,7 @@ describe('repos:add + repos:clone', () => {
       })
     ).rejects.toThrow('Imported folder does not match the selected project identity.')
 
-    expect(mockStore.removeProject).toHaveBeenCalledWith(added[0]?.id)
+    expect(mockStore.removeProject).toHaveBeenCalledWith(added[0]?.id, 'setup-rollback')
     expect(invalidateAuthorizedRootsCacheMock).toHaveBeenCalled()
   })
 
