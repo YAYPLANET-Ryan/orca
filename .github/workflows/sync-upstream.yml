@@ -2,12 +2,16 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '17 2 * * *'
+    # Saturday 01:00 KST (Friday 16:00 UTC). Three hours ahead of the 04:00 KST
+    # window when the desktop and laptop scheduled tasks look for a new build,
+    # so the release is published before the machines go looking for it.
+    - cron: '0 16 * * 5'
   workflow_dispatch:
 
 permissions:
   actions: write
   contents: write
+  issues: write
 
 concurrency:
   group: sync-upstream
@@ -23,43 +27,118 @@ jobs:
           ref: ryan/ceo-office-sidebar
           fetch-depth: 0
 
-      - name: Fetch upstream
+      # Track upstream *releases*, not every commit on upstream/main. Releases are
+      # what the custom build is supposed to follow, and the tag also gives us a
+      # correct base version (see "Trigger custom release").
+      - name: Resolve latest upstream release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git remote add upstream https://github.com/stablyai/orca.git
-          git fetch upstream main --quiet
+          set -euo pipefail
+          tag=$(gh api repos/stablyai/orca/releases/latest --jq .tag_name)
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::Could not resolve the latest upstream release tag."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release: $tag"
 
-      - name: Compare upstream
+      - name: Fetch upstream release tag
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/stablyai/orca.git
+          git fetch upstream --quiet \
+            "refs/tags/${{ steps.upstream.outputs.tag }}:refs/tags/upstream-${{ steps.upstream.outputs.tag }}"
+
+      - name: Decide whether a sync is needed
         id: compare
         run: |
-          if git diff --quiet HEAD upstream/main; then
+          set -euo pipefail
+          sha=$(git rev-parse "upstream-${{ steps.upstream.outputs.tag }}^{commit}")
+          # Why not `git diff --quiet HEAD upstream/main`: this branch carries the
+          # CEO commits on top of upstream, so its tree can never equal upstream's.
+          # That check reported "changed" on every single run, which meant a full
+          # Windows build and a published GitHub release every night whether or not
+          # upstream had moved. Ancestry is the question we actually mean to ask.
+          if git merge-base --is-ancestor "$sha" HEAD; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Branch already contains ${{ steps.upstream.outputs.tag }} - nothing to do."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Need to merge ${{ steps.upstream.outputs.tag }}."
           fi
 
-      - name: Merge upstream
+      - name: Merge upstream release
+        id: merge
         if: steps.compare.outputs.changed == 'true'
         run: |
           git config user.name "upstream-sync[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git merge --no-edit upstream/main; then
+          if git merge --no-edit "upstream-${{ steps.upstream.outputs.tag }}"; then
             echo "merge_ok=true" >> "$GITHUB_OUTPUT"
           else
+            git merge --abort || true
             echo "merge_ok=false" >> "$GITHUB_OUTPUT"
           fi
-        id: merge
 
       - name: Push merged branch
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok == 'true'
         run: git push origin HEAD:ryan/ceo-office-sidebar
 
+      # Gated on merge_ok as well as changed. Previously only the push was gated,
+      # so a conflicted sync still kicked off a release build of the unmerged branch.
+      #
+      # The version is derived from the upstream release tag rather than letting the
+      # release workflow bump package.json. package.json on this branch tracks
+      # upstream's rolling -rc value, which lags the real release numbers, so the
+      # derived version could land *below* an existing -ceo release. The updater
+      # picks the most recently published -ceo release and compares versions by
+      # string equality, so that would install an older build over a newer one.
       - name: Trigger custom release
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run custom-windows-release.yml --repo "$GITHUB_REPOSITORY" --ref ryan/ceo-office-sidebar
+        run: |
+          set -euo pipefail
+          version="${{ steps.upstream.outputs.version }}-ceo.$(date -u +%Y%m%d).${{ github.run_number }}"
+          echo "Dispatching custom release $version"
+          gh workflow run custom-windows-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref ryan/ceo-office-sidebar \
+            -f version="$version"
 
+      # A warning annotation is invisible unless someone opens the run. Weekly runs
+      # make that worse: a conflict could sit unnoticed for a week or more.
       - name: Report conflict
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "::warning::Upstream merge conflict on ryan/ceo-office-sidebar. Manual resolution required."
+          set -euo pipefail
+          tag="${{ steps.upstream.outputs.tag }}"
+          title="Upstream sync conflict: $tag"
+          echo "::warning::Upstream merge conflict on ryan/ceo-office-sidebar for $tag. Manual resolution required."
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing already open."
+            exit 0
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body \
+            "\`git merge $tag\` into \`ryan/ceo-office-sidebar\` conflicted, so no release was built.
+
+          Resolve locally:
+
+          \`\`\`
+          git fetch upstream --tags
+          git checkout ryan/ceo-office-sidebar
+          git merge $tag
+          # resolve, then
+          git push origin ryan/ceo-office-sidebar
+          \`\`\`
+
+          Then dispatch \`custom-windows-release.yml\` with version \`${{ steps.upstream.outputs.version }}-ceo.<YYYYMMDD>.<run>\`.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
