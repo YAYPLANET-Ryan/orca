@@ -91,7 +91,11 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
         canceled = true
       }
     }
-    setManifest(DEFAULT_MANIFEST)
+    // Only fall back to the built-in list before the first successful read. This
+    // effect re-runs whenever a project is registered, and resetting here made the
+    // catalog flick to the built-in list — which is missing whatever the real
+    // manifest has gained — on every click.
+    setManifest((current) => current ?? DEFAULT_MANIFEST)
     const candidates = ceoOfficeManifestRootCandidates({
       activeRoot: workspaceRoot ?? activeWorktree.path,
       repoPaths: repoPaths ? repoPaths.split('\n') : []
@@ -134,9 +138,13 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
   const openManifestItem = async (item: CeoOfficeManifest['groups'][number]['items'][number]) => {
     const action = resolveCeoOfficeNavigation({
       itemPath: joinPath(manifestRoot ?? workspaceRoot ?? activeWorktree.path, item.path),
+      itemKind: item.kind,
       connectionId,
       activePtyId
     })
+    if (action.kind === 'none') {
+      return
+    }
     if (action.kind === 'ssh-cd') {
       window.api.pty.write(action.ptyId, action.command)
       return
@@ -157,7 +165,14 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
     if (!alreadyRegistered) {
       return
     }
-    const worktree = useAppStore.getState().worktreesByRepo[repo.id]?.[0]
+    // Open the terminal in the workspace the click just activated, not the
+    // project's first one. A business is expected to carry several workspaces
+    // (finance, planning, marketing…), and index 0 would drop every terminal into
+    // whichever happened to be created first.
+    const state = useAppStore.getState()
+    const worktrees = state.worktreesByRepo[repo.id] ?? []
+    const worktree =
+      worktrees.find((candidate) => candidate.id === state.activeWorktreeId) ?? worktrees[0]
     if (worktree) {
       createTab(worktree.id, undefined, undefined, { activate: true, recordInteraction: true })
     }

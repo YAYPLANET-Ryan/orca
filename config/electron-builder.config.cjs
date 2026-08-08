@@ -505,10 +505,13 @@ module.exports = {
   //
   // ORCA_UPDATE_OWNER/REPO already gate the publisherName branch above; they have
   // to reach the feed too, or a custom build cannot stay custom.
+  // `||` rather than `??`: an empty ORCA_UPDATE_OWNER is what a misconfigured
+  // workflow produces, and `??` would pass it straight through into
+  // app-update.yml, leaving the build pointed at a feed that cannot resolve.
   publish: {
     provider: 'github',
-    owner: process.env.ORCA_UPDATE_OWNER ?? 'stablyai',
-    repo: process.env.ORCA_UPDATE_REPO ?? devChannelRepo ?? 'orca',
+    owner: process.env.ORCA_UPDATE_OWNER || 'stablyai',
+    repo: process.env.ORCA_UPDATE_REPO || devChannelRepo || 'orca',
     releaseType: devChannelRepo ? 'prerelease' : 'release'
   }
 }

@@ -11,13 +11,23 @@ export type CeoOfficeNavigationAction =
   /** Local: register the entry as a folder-backed project and activate it, so the
    *  business gets its own sidebar entry with its own tabs. */
   | { kind: 'folder-workspace'; folderPath: string }
+  /** Nothing to open: the entry labels a section rather than a working folder. */
+  | { kind: 'none' }
 
 export function resolveCeoOfficeNavigation(args: {
   itemPath: string
+  itemKind?: 'section' | 'task' | 'folder'
   connectionId?: string | null
   activePtyId?: string | null
 }): CeoOfficeNavigationAction {
-  const { itemPath, connectionId, activePtyId } = args
+  const { itemPath, itemKind, connectionId, activePtyId } = args
+  // A 'section' entry is a heading for a review or approval area, not a project
+  // root. Registering one was never intended: 05_REVIEW has no folder on disk and
+  // failed with a toast, while 05_APPROVED does have one and would quietly become
+  // a project alongside the businesses.
+  if (itemKind === 'section') {
+    return { kind: 'none' }
+  }
   if (connectionId && activePtyId?.startsWith(`ssh:${connectionId}@@`)) {
     // Single quotes are the PowerShell literal-string escape, doubled to embed one.
     const escapedPath = itemPath.replaceAll("'", "''")
