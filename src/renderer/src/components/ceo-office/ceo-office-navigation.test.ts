@@ -46,6 +46,31 @@ describe('resolveCeoOfficeNavigation', () => {
     })
   })
 
+  // 05_REVIEW has no folder on disk and failed with a toast; 05_APPROVED does have
+  // one and would quietly become a project sitting beside the businesses.
+  it.each([
+    { name: 'local', connectionId: undefined, activePtyId: undefined },
+    { name: 'with a matching SSH terminal', connectionId: 'host-1', activePtyId: 'ssh:host-1@@abc' }
+  ])('does nothing for a section entry: $name', ({ connectionId, activePtyId }) => {
+    expect(
+      resolveCeoOfficeNavigation({
+        itemPath: 'E:/ORCA/05_APPROVED',
+        itemKind: 'section',
+        connectionId,
+        activePtyId
+      })
+    ).toEqual({ kind: 'none' })
+  })
+
+  it.each([{ kind: 'folder' as const }, { kind: 'task' as const }, { kind: undefined }])(
+    'still opens a workspace for kind $kind',
+    ({ kind }) => {
+      expect(resolveCeoOfficeNavigation({ ...LOCAL, itemKind: kind })).toMatchObject({
+        kind: 'folder-workspace'
+      })
+    }
+  )
+
   it('doubles single quotes so a quote in a path cannot end the literal string', () => {
     expect(
       resolveCeoOfficeNavigation({
