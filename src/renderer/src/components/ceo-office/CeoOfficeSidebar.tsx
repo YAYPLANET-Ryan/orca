@@ -23,8 +23,14 @@ const MANIFEST_PATH = '.orca/ceo-office.json'
 
 const GROUP_ICONS = [BriefcaseBusiness, CircleUserRound, FolderKanban, ShieldCheck]
 
-// Keep the CEO navigation visible while an SSH-backed manifest is loading. The
-// remote manifest remains the source of truth and replaces this once available.
+// Keep the CEO navigation visible while a remote manifest is loading. The manifest
+// on the workspace root stays the source of truth and replaces this once read.
+//
+// This has to mirror .orca/ceo-office.json. When it drifts there is no symptom to
+// notice: a client that cannot read the manifest shows this list instead, and it
+// simply looks like a shorter catalog. A paired laptop displayed six businesses
+// against the runtime's seven, and the only way to tell was to compare by hand.
+// If you edit one, edit the other.
 const DEFAULT_MANIFEST: CeoOfficeManifest = {
   version: 1,
   title: 'CEO Office',
@@ -33,6 +39,7 @@ const DEFAULT_MANIFEST: CeoOfficeManifest = {
       id: 'businesses',
       label: 'Businesses',
       items: [
+        { id: 'ceo-office', label: 'CEO Office', path: '01_CEO_OFFICE', kind: 'folder' },
         { id: 'oildealer', label: 'OilDealer', path: '02_BUSINESSES/oildealer', kind: 'folder' },
         { id: 'cubeplanet', label: 'CubePlanet', path: '02_BUSINESSES/cubeplanet', kind: 'folder' },
         { id: 'yieldcore', label: 'YieldCore', path: '02_BUSINESSES/yieldcore', kind: 'folder' },
@@ -101,6 +108,12 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
       repoPaths: repoPaths ? repoPaths.split('\n') : []
     })
     void (async () => {
+      // Why collected rather than ignored: falling back to the built-in list looks
+      // identical whether the manifest is genuinely absent or the read failed, and
+      // the built-in list drifts from the real one. A paired client showed six
+      // businesses while the manifest on the runtime had seven, with nothing
+      // anywhere saying a read had failed.
+      const attempts: string[] = []
       for (const root of candidates) {
         if (canceled) {
           return
@@ -121,10 +134,18 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
           setManifest(parsed)
           setManifestRoot(root)
           return
-        } catch {
-          // Try the next root; a missing manifest here is the normal case for
-          // every workspace that is not the ORCA repository root.
+        } catch (err) {
+          attempts.push(`${root}: ${err instanceof Error ? err.message : String(err)}`)
         }
+      }
+      if (!canceled) {
+        // Absent from every candidate is the ordinary case for a workspace that is
+        // not the ORCA root, so this is a warning rather than an error — but it has
+        // to be visible, because the fallback silently substitutes a stale catalog.
+        console.warn(
+          `[ceo-office] no readable ${MANIFEST_PATH}; showing the built-in catalog. Tried:\n` +
+            attempts.join('\n')
+        )
       }
     })()
     return () => {
