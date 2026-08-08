@@ -41,22 +41,39 @@ jobs:
             echo "::error::Could not resolve the latest upstream release tag."
             exit 1
           fi
+          # The tag reaches later steps as shell input, so pin its shape here rather
+          # than trusting whatever upstream published. A tag is attacker-controlled
+          # from this repository's point of view, and a name carrying $( ) would be
+          # substituted into a run block as text and then executed by the shell.
+          if ! printf '%s' "$tag" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Refusing an upstream tag with an unexpected shape: $tag"
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "Latest upstream release: $tag"
 
+      # Every step below takes the tag through the environment rather than through
+      # ${{ }} interpolation: an expression is pasted into the script as text before
+      # the shell sees it, so the shell would parse whatever the tag contains.
       - name: Fetch upstream release tag
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/stablyai/orca.git
-          git fetch upstream --quiet \
-            "refs/tags/${{ steps.upstream.outputs.tag }}:refs/tags/upstream-${{ steps.upstream.outputs.tag }}"
+          # Forced so re-running the workflow for a tag already fetched locally does
+          # not stop at "would clobber existing tag".
+          git fetch upstream --quiet --force \
+            "+refs/tags/${UPSTREAM_TAG}:refs/tags/upstream-${UPSTREAM_TAG}"
 
       - name: Decide whether a sync is needed
         id: compare
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
           set -euo pipefail
-          sha=$(git rev-parse "upstream-${{ steps.upstream.outputs.tag }}^{commit}")
+          sha=$(git rev-parse "upstream-${UPSTREAM_TAG}^{commit}")
           # Why not `git diff --quiet HEAD upstream/main`: this branch carries the
           # CEO commits on top of upstream, so its tree can never equal upstream's.
           # That check reported "changed" on every single run, which meant a full
@@ -64,19 +81,21 @@ jobs:
           # upstream had moved. Ancestry is the question we actually mean to ask.
           if git merge-base --is-ancestor "$sha" HEAD; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Branch already contains ${{ steps.upstream.outputs.tag }} - nothing to do."
+            echo "Branch already contains ${UPSTREAM_TAG} - nothing to do."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Need to merge ${{ steps.upstream.outputs.tag }}."
+            echo "Need to merge ${UPSTREAM_TAG}."
           fi
 
       - name: Merge upstream release
         id: merge
         if: steps.compare.outputs.changed == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
           git config user.name "upstream-sync[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git merge --no-edit "upstream-${{ steps.upstream.outputs.tag }}"; then
+          if git merge --no-edit "upstream-${UPSTREAM_TAG}"; then
             echo "merge_ok=true" >> "$GITHUB_OUTPUT"
           else
             git merge --abort || true
@@ -100,9 +119,11 @@ jobs:
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_VERSION: ${{ steps.upstream.outputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          version="${{ steps.upstream.outputs.version }}-ceo.$(date -u +%Y%m%d).${{ github.run_number }}"
+          version="${UPSTREAM_VERSION}-ceo.$(date -u +%Y%m%d).${RUN_NUMBER}"
           echo "Dispatching custom release $version"
           gh workflow run custom-windows-release.yml \
             --repo "$GITHUB_REPOSITORY" \
@@ -115,9 +136,12 @@ jobs:
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.merge_ok != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+          UPSTREAM_VERSION: ${{ steps.upstream.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          tag="${{ steps.upstream.outputs.tag }}"
+          tag="${UPSTREAM_TAG}"
           title="Upstream sync conflict: $tag"
           echo "::warning::Upstream merge conflict on ryan/ceo-office-sidebar for $tag. Manual resolution required."
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
@@ -139,6 +163,6 @@ jobs:
           git push origin ryan/ceo-office-sidebar
           \`\`\`
 
-          Then dispatch \`custom-windows-release.yml\` with version \`${{ steps.upstream.outputs.version }}-ceo.<YYYYMMDD>.<run>\`.
+          Then dispatch \`custom-windows-release.yml\` with version \`${UPSTREAM_VERSION}-ceo.<YYYYMMDD>.<run>\`.
 
-          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          Run: ${RUN_URL}"
