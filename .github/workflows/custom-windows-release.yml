@@ -66,8 +66,13 @@ jobs:
             # source sync-upstream uses — and let the date suffix keep successive
             # builds on one base monotonic.
             $base = (gh api repos/stablyai/orca/releases/latest --jq .tag_name)
-            if ([string]::IsNullOrWhiteSpace($base)) {
-              throw "Could not resolve the latest upstream release tag."
+            # `gh api` prints the string "null" when the response has no tag_name —
+            # a rate limit or a 404 body both land there — and a blank check lets
+            # that through, publishing "null-ceo.<date>.<run>". The updater compares
+            # versions as strings, so a release named that is worse than no release.
+            # Require the shape we expect instead of merely non-empty.
+            if ($LASTEXITCODE -ne 0 -or $base -notmatch '^v?\d+\.\d+\.\d+') {
+              throw "Could not resolve the latest upstream release tag (got '$base')."
             }
             $base = ($base -replace '^v', '').Split('-')[0]
             $date = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
