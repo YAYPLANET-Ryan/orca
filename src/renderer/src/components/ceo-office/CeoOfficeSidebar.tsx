@@ -14,6 +14,10 @@ import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import { cn } from '@/lib/utils'
 import { parseCeoOfficeManifest, type CeoOfficeManifest } from './ceo-office-manifest'
 import { resolveCeoOfficeNavigation } from './ceo-office-navigation'
+import {
+  ceoOfficeManifestRootCandidates,
+  isFolderAlreadyRegistered
+} from './ceo-office-roots'
 
 const MANIFEST_PATH = '.orca/ceo-office.json'
 
@@ -72,7 +76,11 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
   )
   const createTab = useAppStore((s) => s.createTab)
   const addNonGitFolder = useAppStore((s) => s.addNonGitFolder)
+  const repoPaths = useAppStore((s) => s.repos.map((repo) => repo.path).join('\n'))
   const [manifest, setManifest] = React.useState<CeoOfficeManifest | null>(DEFAULT_MANIFEST)
+  // The root the manifest was actually found under. Entry paths resolve against
+  // this, not the active workspace — see ceo-office-roots.ts.
+  const [manifestRoot, setManifestRoot] = React.useState<string | undefined>(undefined)
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
 
   React.useEffect(() => {
@@ -84,34 +92,48 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
       }
     }
     setManifest(DEFAULT_MANIFEST)
-    void readRuntimeFileContent({
-      settings,
-      filePath: joinPath(workspaceRoot ?? activeWorktree.path, MANIFEST_PATH),
-      relativePath: MANIFEST_PATH,
-      worktreeId: activeWorktree.id,
-      connectionId,
-      expectedExternalSshTargetId: connectionId
+    const candidates = ceoOfficeManifestRootCandidates({
+      activeRoot: workspaceRoot ?? activeWorktree.path,
+      repoPaths: repoPaths ? repoPaths.split('\n') : []
     })
-      .then(({ content }) => {
+    void (async () => {
+      for (const root of candidates) {
         if (canceled) {
           return
         }
         try {
-          setManifest(parseCeoOfficeManifest(JSON.parse(content)))
-        } catch {}
-      })
-      .catch(() => undefined)
+          const { content } = await readRuntimeFileContent({
+            settings,
+            filePath: joinPath(root, MANIFEST_PATH),
+            relativePath: MANIFEST_PATH,
+            worktreeId: activeWorktree.id,
+            connectionId,
+            expectedExternalSshTargetId: connectionId
+          })
+          const parsed = parseCeoOfficeManifest(JSON.parse(content))
+          if (canceled) {
+            return
+          }
+          setManifest(parsed)
+          setManifestRoot(root)
+          return
+        } catch {
+          // Try the next root; a missing manifest here is the normal case for
+          // every workspace that is not the ORCA repository root.
+        }
+      }
+    })()
     return () => {
       canceled = true
     }
-  }, [activeWorktree, connectionId, settings, workspaceRoot])
+  }, [activeWorktree, connectionId, settings, workspaceRoot, repoPaths])
 
   if (!manifest || !activeWorktree) {
     return null
   }
   const openManifestItem = async (item: CeoOfficeManifest['groups'][number]['items'][number]) => {
     const action = resolveCeoOfficeNavigation({
-      itemPath: joinPath(workspaceRoot ?? activeWorktree.path, item.path),
+      itemPath: joinPath(manifestRoot ?? workspaceRoot ?? activeWorktree.path, item.path),
       connectionId,
       activePtyId
     })
@@ -119,14 +141,22 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
       window.api.pty.write(action.ptyId, action.command)
       return
     }
+    const alreadyRegistered = isFolderAlreadyRegistered({
+      folderPath: action.folderPath,
+      repoPaths: useAppStore.getState().repos.map((repo) => repo.path)
+    })
     // Registers on first click and reuses the project afterwards, activating and
     // revealing its workspace either way.
     const repo = await addNonGitFolder(action.folderPath)
     if (!repo) {
       return
     }
-    // Then a terminal, every time — returning to a business usually means starting
-    // a second line of work beside the first, not resuming the one already open.
+    // A revisit gets a fresh terminal — returning to a business usually means
+    // starting a second line of work beside the first. The first click does not:
+    // registering the folder activates its workspace, and that already opens one.
+    if (!alreadyRegistered) {
+      return
+    }
     const worktree = useAppStore.getState().worktreesByRepo[repo.id]?.[0]
     if (worktree) {
       createTab(worktree.id, undefined, undefined, { activate: true, recordInteraction: true })
