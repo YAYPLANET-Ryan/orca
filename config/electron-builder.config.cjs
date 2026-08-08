@@ -546,10 +546,20 @@ module.exports = {
   // on Intel Macs. The beforeBuild hook performs Orca's targeted rebuild and
   // returns false so electron-builder does not rebuild optional cpu-features.
   npmRebuild: true,
+  // electron-builder writes app-update.yml from this block, so it decides where an
+  // installed build looks for its next update. Hardcoding the upstream owner here
+  // pointed every custom build's updater at stablyai/orca: the build would offer
+  // the next official release and installing it replaced the custom build with
+  // stock Orca, silently discarding the CEO Office sidebar. Measured 2026-08-08 —
+  // the installed 1.4.174-ceo build updated itself to official 1.4.176, sha512
+  // matching stablyai's asset exactly.
+  //
+  // ORCA_UPDATE_OWNER/REPO already gate the publisherName branch above; they have
+  // to reach the feed too, or a custom build cannot stay custom.
   publish: {
     provider: 'github',
-    owner: 'stablyai',
-    repo: devChannelRepo ?? 'orca',
+    owner: process.env.ORCA_UPDATE_OWNER ?? 'stablyai',
+    repo: process.env.ORCA_UPDATE_REPO ?? devChannelRepo ?? 'orca',
     releaseType: devChannelRepo ? 'prerelease' : 'release'
   }
 }
