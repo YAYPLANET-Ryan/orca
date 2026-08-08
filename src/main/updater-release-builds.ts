@@ -4,12 +4,14 @@ import {
   getReleaseRepoForChannel,
   getVersionChannel,
   hasInstallableArtifactForPlatform,
+  MAIN_RELEASE_REPO,
   normalizeTagToVersion,
   sortReleaseBuildsNewestFirst,
   type ReleaseBuild,
   type ReleaseChannel
 } from '../shared/release-channel'
 import { isValidVersion } from './updater-fallback'
+import { resolveChannelRepository } from './updater-repository'
 
 const FETCH_TIMEOUT_MS = 8000
 const MAX_LISTED_BUILDS = 100
@@ -96,7 +98,7 @@ export async function listReleaseBuilds(
   channel: ReleaseChannel,
   platform: NodeJS.Platform = process.platform
 ): Promise<ReleaseBuild[]> {
-  const repo = getReleaseRepoForChannel(channel)
+  const repo = resolveChannelRepository(getReleaseRepoForChannel(channel), MAIN_RELEASE_REPO)
   const res = await net.fetch(getReleasesApiUrl(repo), {
     headers: { Accept: 'application/vnd.github+json' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
@@ -134,6 +136,6 @@ export function resolveTargetBuild(channel: ReleaseChannel, tag: string): Resolv
   if (!isValidVersion(version)) {
     throw new Error(`"${tag}" is not a valid release tag.`)
   }
-  const repo = getReleaseRepoForChannel(channel)
+  const repo = resolveChannelRepository(getReleaseRepoForChannel(channel), MAIN_RELEASE_REPO)
   return { tag, version, feedUrl: getReleaseDownloadUrlForRepo(repo, tag) }
 }
