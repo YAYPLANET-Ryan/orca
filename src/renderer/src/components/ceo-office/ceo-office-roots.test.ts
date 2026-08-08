@@ -5,47 +5,59 @@ import {
   normalizeRootPath
 } from './ceo-office-roots'
 
+const WORKTREES = [
+  { id: 'wt-oildealer', path: 'E:/ORCA/02_BUSINESSES/oildealer' },
+  { id: 'wt-root', path: 'E:/ORCA' },
+  { id: 'wt-personal', path: 'E:/ORCA/02_PERSONAL' }
+]
+
 describe('ceoOfficeManifestRootCandidates', () => {
   it('tries the active workspace first so an unchanged setup reads one file', () => {
-    expect(
-      ceoOfficeManifestRootCandidates({
-        activeRoot: 'E:/ORCA',
-        repoPaths: ['E:/ORCA', 'E:/ORCA/02_PERSONAL']
-      })
-    ).toEqual(['E:/ORCA', 'E:/ORCA/02_PERSONAL'])
+    const [first] = ceoOfficeManifestRootCandidates({
+      activeWorktreeId: 'wt-root',
+      activeRoot: 'E:/ORCA',
+      worktrees: WORKTREES
+    })
+    expect(first).toEqual({ worktreeId: 'wt-root', root: 'E:/ORCA' })
   })
 
-  // The failure this guards: opening Personal makes it the active workspace, and
-  // resolving entry paths against it pointed OilDealer at
-  // E:/ORCA/02_PERSONAL/02_BUSINESSES/oildealer.
-  it('falls back to the enclosing repo when a sub-workspace is active', () => {
-    expect(
-      ceoOfficeManifestRootCandidates({
-        activeRoot: 'E:/ORCA/02_PERSONAL',
-        repoPaths: ['E:/ORCA/02_PERSONAL', 'E:/ORCA']
-      })
-    ).toEqual(['E:/ORCA/02_PERSONAL', 'E:/ORCA'])
+  // A remote read is addressed by workspace, not by path — the runtime resolves
+  // the relative path against the workspace id and ignores the absolute path. With
+  // roots alone, every candidate resolved against whichever workspace was active,
+  // so a paired client probed E:/ORCA/02_PERSONAL/.orca/ceo-office.json five times.
+  it('pairs every root with the workspace that owns it', () => {
+    const candidates = ceoOfficeManifestRootCandidates({
+      activeWorktreeId: 'wt-personal',
+      activeRoot: 'E:/ORCA/02_PERSONAL',
+      worktrees: WORKTREES
+    })
+    expect(candidates).toEqual([
+      { worktreeId: 'wt-personal', root: 'E:/ORCA/02_PERSONAL' },
+      { worktreeId: 'wt-root', root: 'E:/ORCA' },
+      { worktreeId: 'wt-oildealer', root: 'E:/ORCA/02_BUSINESSES/oildealer' }
+    ])
   })
 
-  it('orders registered projects outermost first', () => {
-    expect(
-      ceoOfficeManifestRootCandidates({
-        repoPaths: ['E:/ORCA/02_BUSINESSES/oildealer', 'E:/ORCA', 'E:/ORCA/02_PERSONAL']
-      })
-    ).toEqual(['E:/ORCA', 'E:/ORCA/02_PERSONAL', 'E:/ORCA/02_BUSINESSES/oildealer'])
+  it('orders the workspaces outermost first', () => {
+    expect(ceoOfficeManifestRootCandidates({ worktrees: WORKTREES }).map((c) => c.root)).toEqual([
+      'E:/ORCA',
+      'E:/ORCA/02_PERSONAL',
+      'E:/ORCA/02_BUSINESSES/oildealer'
+    ])
   })
 
   it('drops duplicates across slash direction and case', () => {
     expect(
       ceoOfficeManifestRootCandidates({
+        activeWorktreeId: 'wt-root',
         activeRoot: 'E:\\ORCA',
-        repoPaths: ['e:/orca/', 'E:/ORCA']
+        worktrees: [{ id: 'wt-root', path: 'e:/orca/' }]
       })
-    ).toEqual(['E:\\ORCA'])
+    ).toEqual([{ worktreeId: 'wt-root', root: 'E:\\ORCA' }])
   })
 
-  it('returns an empty list when nothing is registered and nothing is active', () => {
-    expect(ceoOfficeManifestRootCandidates({ repoPaths: [] })).toEqual([])
+  it('returns an empty list when nothing is known', () => {
+    expect(ceoOfficeManifestRootCandidates({ worktrees: [] })).toEqual([])
   })
 })
 

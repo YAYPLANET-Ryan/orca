@@ -15,25 +15,45 @@ export function normalizeRootPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
-/** Roots to try, in the order worth trying.
+export type CeoOfficeManifestCandidate = { worktreeId: string; root: string }
+
+/** Workspaces to try, in the order worth trying.
+ *
+ *  Candidates are workspaces rather than bare paths because a remote read is
+ *  addressed by workspace: the runtime resolves the relative path against the
+ *  workspace id it is given and ignores the absolute path entirely. Passing five
+ *  roots with one workspace id therefore probed the same file five times — on a
+ *  paired client every attempt reported
+ *  `ENOENT ... E:\ORCA\02_PERSONAL\.orca\ceo-office.json`, whichever root was asked
+ *  for, because 02_PERSONAL happened to be active.
  *
  *  The active workspace comes first so an unchanged setup reads exactly one file.
- *  Registered projects follow, outermost first: catalog entries are registered as
- *  their own folder projects, so the enclosing ORCA repo is always a shorter path
- *  than any entry opened from it.
+ *  The rest follow outermost first: catalog entries open as their own workspaces
+ *  beneath the ORCA repository, so the repository root is always the shorter path.
  */
 export function ceoOfficeManifestRootCandidates(args: {
+  activeWorktreeId?: string
   activeRoot?: string
-  repoPaths: readonly string[]
-}): string[] {
-  const ordered = [...args.repoPaths].sort(
-    (a, b) => normalizeRootPath(a).length - normalizeRootPath(b).length
+  worktrees: readonly { id: string; path: string }[]
+}): CeoOfficeManifestCandidate[] {
+  const ordered = [...args.worktrees].sort(
+    (a, b) => normalizeRootPath(a.path).length - normalizeRootPath(b.path).length
   )
+  const active =
+    args.activeWorktreeId && args.activeRoot
+      ? [{ worktreeId: args.activeWorktreeId, root: args.activeRoot }]
+      : []
   const seen = new Set<string>()
-  const candidates: string[] = []
-  for (const candidate of [...(args.activeRoot ? [args.activeRoot] : []), ...ordered]) {
-    const key = normalizeRootPath(candidate)
-    if (!key || seen.has(key)) {
+  const candidates: CeoOfficeManifestCandidate[] = []
+  for (const candidate of [
+    ...active,
+    ...ordered.map((worktree) => ({ worktreeId: worktree.id, root: worktree.path }))
+  ]) {
+    if (!candidate.worktreeId || !candidate.root) {
+      continue
+    }
+    const key = `${candidate.worktreeId}\u0000${normalizeRootPath(candidate.root)}`
+    if (seen.has(key)) {
       continue
     }
     seen.add(key)

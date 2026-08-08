@@ -121,9 +121,13 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
     // catalog flick to the built-in list — which is missing whatever the real
     // manifest has gained — on every click.
     setManifest((current) => current ?? DEFAULT_MANIFEST)
+    const state = useAppStore.getState()
     const candidates = ceoOfficeManifestRootCandidates({
+      activeWorktreeId: activeWorktree.id,
       activeRoot: workspaceRoot ?? activeWorktree.path,
-      repoPaths: repoPaths ? repoPaths.split('\n') : []
+      worktrees: Object.values(state.worktreesByRepo)
+        .flat()
+        .map((worktree) => ({ id: worktree.id, path: worktree.path }))
     })
     void (async () => {
       // Why collected rather than ignored: falling back to the built-in list looks
@@ -132,16 +136,18 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
       // businesses while the manifest on the runtime had seven, with nothing
       // anywhere saying a read had failed.
       const attempts: string[] = []
-      for (const root of candidates) {
+      for (const candidate of candidates) {
         if (canceled) {
           return
         }
         try {
           const { content } = await readRuntimeFileContent({
             settings,
-            filePath: joinPath(root, MANIFEST_PATH),
+            filePath: joinPath(candidate.root, MANIFEST_PATH),
             relativePath: MANIFEST_PATH,
-            worktreeId: activeWorktree.id,
+            // Addresses the read on a remote runtime; the absolute path above is
+            // only used for a local read.
+            worktreeId: candidate.worktreeId,
             connectionId,
             expectedExternalSshTargetId: connectionId
           })
@@ -150,10 +156,12 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
             return
           }
           setManifest(parsed)
-          setManifestRoot(root)
+          setManifestRoot(candidate.root)
           return
         } catch (err) {
-          attempts.push(`${root}: ${err instanceof Error ? err.message : String(err)}`)
+          attempts.push(
+            `${candidate.root} (${candidate.worktreeId}): ${err instanceof Error ? err.message : String(err)}`
+          )
         }
       }
       if (!canceled) {
