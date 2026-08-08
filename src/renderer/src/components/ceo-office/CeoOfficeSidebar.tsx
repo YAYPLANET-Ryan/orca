@@ -71,6 +71,7 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
     s.activeTabId ? s.ptyIdsByTabId[s.activeTabId]?.[0] : undefined
   )
   const createTab = useAppStore((s) => s.createTab)
+  const addNonGitFolder = useAppStore((s) => s.addNonGitFolder)
   const [manifest, setManifest] = React.useState<CeoOfficeManifest | null>(DEFAULT_MANIFEST)
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
 
@@ -111,7 +112,6 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
   const openManifestItem = async (item: CeoOfficeManifest['groups'][number]['items'][number]) => {
     const action = resolveCeoOfficeNavigation({
       itemPath: joinPath(workspaceRoot ?? activeWorktree.path, item.path),
-      worktreeId: activeWorktree.id,
       connectionId,
       activePtyId
     })
@@ -119,14 +119,18 @@ export default function CeoOfficeSidebar(): React.JSX.Element | null {
       window.api.pty.write(action.ptyId, action.command)
       return
     }
-    // Always spawn a new tab, even when one already sits in that folder: returning
-    // to a business folder usually means starting a second line of work beside the
-    // first, not resuming the one already open.
-    createTab(action.worktreeId, undefined, undefined, {
-      startupCwd: action.startupCwd,
-      activate: true,
-      recordInteraction: true
-    })
+    // Registers on first click and reuses the project afterwards, activating and
+    // revealing its workspace either way.
+    const repo = await addNonGitFolder(action.folderPath)
+    if (!repo) {
+      return
+    }
+    // Then a terminal, every time — returning to a business usually means starting
+    // a second line of work beside the first, not resuming the one already open.
+    const worktree = useAppStore.getState().worktreesByRepo[repo.id]?.[0]
+    if (worktree) {
+      createTab(worktree.id, undefined, undefined, { activate: true, recordInteraction: true })
+    }
   }
 
   return (
