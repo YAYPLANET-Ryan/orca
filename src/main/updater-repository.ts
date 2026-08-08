@@ -76,6 +76,19 @@ export function buildReleaseTagHrefPattern(): RegExp {
   return new RegExp(`href="https://github\\.com/${escaped}/releases/tag/([^"]+)"`, 'g')
 }
 
+/** `owner/repo` for the configured repository. */
+export function getUpdateRepositorySlug(): string {
+  const { owner, repo } = getUpdateRepository()
+  return `${owner}/${repo}`
+}
+
+/** Redirects the main release repository to the configured one, leaving the
+ *  dedicated dev-channel repositories (hourly, adhoc) alone — those are upstream
+ *  build channels and a fork does not publish to them. */
+export function resolveChannelRepository(channelRepo: string, mainRepo: string): string {
+  return channelRepo === mainRepo ? getUpdateRepositorySlug() : channelRepo
+}
+
 export function resetUpdateRepositoryCacheForTest(): void {
   cached = null
 }

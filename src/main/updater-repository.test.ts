@@ -9,7 +9,8 @@ import {
   getReleasesAtomFeedUrl,
   getReleasesDownloadBase,
   getUpdateRepository,
-  resetUpdateRepositoryCacheForTest
+  resetUpdateRepositoryCacheForTest,
+  resolveChannelRepository
 } from './updater-repository'
 
 const originalResourcesPath = process.resourcesPath
@@ -89,5 +90,29 @@ describe('buildReleaseTagHrefPattern', () => {
     const body = '<a href="https://github.com/a.b/c+d/releases/tag/v1.0.0"><a href="https://github.com/axb/cxd/releases/tag/v2.0.0">'
     const tags = [...body.matchAll(buildReleaseTagHrefPattern())].map((m) => m[1])
     expect(tags).toEqual(['v1.0.0'])
+  })
+})
+
+describe('resolveChannelRepository', () => {
+  // The stable and rc channels both resolve to the main repository, and that is
+  // the one a fork republishes under its own name.
+  it('redirects the main repository to the configured one', () => {
+    created.push(useResourcesDir('owner: YAYPLANET-Ryan\nrepo: orca\n'))
+    expect(resolveChannelRepository('stablyai/orca', 'stablyai/orca')).toBe('YAYPLANET-Ryan/orca')
+  })
+
+  // hourly and adhoc are upstream build channels; a fork does not publish to them,
+  // so pointing them at the fork would only produce 404s.
+  it.each(['stablyai/orca-hourly', 'stablyai/orca-adhoc'])(
+    'leaves the dedicated dev channel %s alone',
+    (channelRepo) => {
+      created.push(useResourcesDir('owner: YAYPLANET-Ryan\nrepo: orca\n'))
+      expect(resolveChannelRepository(channelRepo, 'stablyai/orca')).toBe(channelRepo)
+    }
+  )
+
+  it('is a no-op for an upstream build', () => {
+    created.push(useResourcesDir(null))
+    expect(resolveChannelRepository('stablyai/orca', 'stablyai/orca')).toBe('stablyai/orca')
   })
 })
