@@ -14,6 +14,9 @@ import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import { cn } from '@/lib/utils'
 import { parseCeoOfficeManifest, type CeoOfficeManifest } from './ceo-office-manifest'
 import { resolveCeoOfficeNavigation } from './ceo-office-navigation'
+import { getResolvedExecutionHostIdForWorktree } from '@/lib/resolved-worktree-execution-host'
+import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
 import {
   ceoOfficeManifestRootCandidates,
   isFolderAlreadyRegistered
@@ -66,8 +69,23 @@ const DEFAULT_MANIFEST: CeoOfficeManifest = {
 }
 
 export default function CeoOfficeSidebar(): React.JSX.Element | null {
-  const settings = useAppStore((s) => s.settings)
+  const globalSettings = useAppStore((s) => s.settings)
   const activeWorktree = useActiveWorktree()
+  // Which host owns the active workspace. A paired client leaves
+  // settings.activeRuntimeEnvironmentId null while working entirely against a
+  // remote runtime, so reading the global value sent every manifest read to the
+  // local disk — where E:/ORCA does not exist and fs:readFile answers "path
+  // resolves outside allowed directories". Scope to the workspace instead, the
+  // same way the editor and diff viewer do.
+  const runtimeEnvironmentId = useAppStore((s) => {
+    const hostId = getResolvedExecutionHostIdForWorktree(s, activeWorktree?.id)
+    const parsed = parseExecutionHostId(hostId)
+    return parsed?.kind === 'runtime' ? parsed.environmentId : null
+  })
+  const settings = React.useMemo(
+    () => settingsForRuntimeOwner(globalSettings, runtimeEnvironmentId) ?? globalSettings,
+    [globalSettings, runtimeEnvironmentId]
+  )
   const workspaceRoot = useAppStore((s) =>
     activeWorktree
       ? (s.repos.find((repo) => repo.id === activeWorktree.repoId)?.path ?? activeWorktree.path)
