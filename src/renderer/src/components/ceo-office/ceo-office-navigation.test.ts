@@ -1,20 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { resolveCeoOfficeNavigation } from './ceo-office-navigation'
 
-const LOCAL = {
-  itemPath: 'E:/ORCA/02_BUSINESSES/oildealer',
-  worktreeId: 'repo-1::E:/ORCA'
-}
+const LOCAL = { itemPath: 'E:/ORCA/02_BUSINESSES/oildealer' }
 
 describe('resolveCeoOfficeNavigation', () => {
   // The regression this guards: every local workspace fell through to a throw, so
   // clicking a catalog entry did nothing and the failure was swallowed by the
-  // caller's .catch(). A local click must produce a terminal.
-  it('opens a tab at the entry folder on a local workspace', () => {
+  // caller's .catch(). A local click must give the entry its own workspace.
+  it('opens the entry as a folder workspace on a local workspace', () => {
     expect(resolveCeoOfficeNavigation(LOCAL)).toEqual({
-      kind: 'new-tab',
-      worktreeId: 'repo-1::E:/ORCA',
-      startupCwd: 'E:/ORCA/02_BUSINESSES/oildealer'
+      kind: 'folder-workspace',
+      folderPath: 'E:/ORCA/02_BUSINESSES/oildealer'
     })
   })
 
@@ -27,16 +23,18 @@ describe('resolveCeoOfficeNavigation', () => {
       connectionId: 'host-1',
       activePtyId: 'ssh:host-2@@abc'
     }
-  ])('opens a tab when the SSH terminal does not match: $name', ({ connectionId, activePtyId }) => {
-    expect(resolveCeoOfficeNavigation({ ...LOCAL, connectionId, activePtyId })).toMatchObject({
-      kind: 'new-tab'
-    })
-  })
+  ])(
+    'falls back to a folder workspace when the SSH terminal does not match: $name',
+    ({ connectionId, activePtyId }) => {
+      expect(resolveCeoOfficeNavigation({ ...LOCAL, connectionId, activePtyId })).toMatchObject({
+        kind: 'folder-workspace'
+      })
+    }
+  )
 
-  it('moves the matching SSH terminal instead of spawning a second remote shell', () => {
+  it('moves the matching SSH terminal instead of registering a remote path locally', () => {
     expect(
       resolveCeoOfficeNavigation({
-        ...LOCAL,
         itemPath: '/srv/orca/02_BUSINESSES/oildealer',
         connectionId: 'host-1',
         activePtyId: 'ssh:host-1@@abc'
@@ -48,13 +46,13 @@ describe('resolveCeoOfficeNavigation', () => {
     })
   })
 
-  it("doubles single quotes so a quote in a path cannot end the literal string", () => {
-    const action = resolveCeoOfficeNavigation({
-      ...LOCAL,
-      itemPath: "/srv/o'rca/biz",
-      connectionId: 'host-1',
-      activePtyId: 'ssh:host-1@@abc'
-    })
-    expect(action).toMatchObject({ command: "Set-Location -LiteralPath '/srv/o''rca/biz'\r" })
+  it('doubles single quotes so a quote in a path cannot end the literal string', () => {
+    expect(
+      resolveCeoOfficeNavigation({
+        itemPath: "/srv/o'rca/biz",
+        connectionId: 'host-1',
+        activePtyId: 'ssh:host-1@@abc'
+      })
+    ).toMatchObject({ command: "Set-Location -LiteralPath '/srv/o''rca/biz'\r" })
   })
 })
