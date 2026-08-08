@@ -52,11 +52,24 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           RUN_NUMBER: ${{ github.run_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if ($env:INPUT_VERSION) {
             $version = $env:INPUT_VERSION
           } else {
-            $base = node -p "require('./package.json').version.split('-')[0]"
+            # Why not package.json: on this branch it tracks upstream's rolling -rc
+            # value, which lags the released numbers. It reads 1.4.174-rc.0 while
+            # 1.4.176-ceo.* is already published, so deriving from it yields a
+            # version BELOW the installed build. The updater takes the most recently
+            # published -ceo release and compares by string equality, so that ships
+            # a downgrade. Derive from upstream's latest release instead — the same
+            # source sync-upstream uses — and let the date suffix keep successive
+            # builds on one base monotonic.
+            $base = (gh api repos/stablyai/orca/releases/latest --jq .tag_name)
+            if ([string]::IsNullOrWhiteSpace($base)) {
+              throw "Could not resolve the latest upstream release tag."
+            }
+            $base = ($base -replace '^v', '').Split('-')[0]
             $date = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
             $version = "$base-ceo.$date.$env:RUN_NUMBER"
           }
