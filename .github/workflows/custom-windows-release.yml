@@ -57,6 +57,7 @@ jobs:
             src/renderer/src/components/ceo-office `
             src/renderer/src/components/sidebar/WorktreeCardAgents.activation.test.tsx `
             src/main/updater-repository.test.ts `
+            src/main/updater-auto-download.test.ts `
             src/main/updater-release-builds.test.ts `
             src/main/updater.quit-and-install.test.ts `
             src/main/persistence-workspace-session-scrollback.test.ts `
