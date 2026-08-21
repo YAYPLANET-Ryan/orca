@@ -2,7 +2,7 @@ name: Custom Windows Release
 
 on:
   push:
-    branches: [ryan/ceo-office-sidebar]
+    branches: [ryan/ceo-office-sidebar, ryan/ceo-office-sidebar-latest]
   workflow_call:
   workflow_dispatch:
     inputs:
@@ -31,7 +31,7 @@ jobs:
       - name: Checkout custom branch
         uses: actions/checkout@v4
         with:
-          ref: ryan/ceo-office-sidebar
+          ref: ${{ github.ref_name }}
           fetch-depth: 1
 
       - name: Set up Node.js
