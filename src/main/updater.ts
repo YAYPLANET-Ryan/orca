@@ -64,7 +64,7 @@ import {
   fetchNewerReleaseTagsWithReadiness,
   getReleaseDownloadUrl
 } from './updater-prerelease-feed'
-import { getLatestReleaseDownloadUrl } from './updater-repository'
+import { getLatestReleaseDownloadUrl, isCustomUpdateRepository } from './updater-repository'
 import { fetchNudge, shouldApplyNudge } from './updater-nudge'
 import {
   failServeUpdateHandoff,
@@ -2202,7 +2202,8 @@ export function setupAutoUpdater(
   }
 
   const autoUpdater = getAutoUpdater()
-  autoUpdater.autoDownload = false
+  // Custom builds opt into their GitHub feed at packaging time, so stage their update automatically.
+  autoUpdater.autoDownload = isCustomUpdateRepository()
   if (activeUpdateSource === 'release') {
     autoUpdater.allowDowngrade = false
     autoUpdater.disableDifferentialDownload = false

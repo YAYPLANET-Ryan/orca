@@ -133,6 +133,7 @@ export function createUpdaterMocks(): UpdaterMocks {
     autoUpdaterMock.quitAndInstall.mockReset()
     autoUpdaterMock.setFeedURL.mockClear()
     autoUpdaterMock.updateConfigPath = undefined
+    autoUpdaterMock.autoDownload = false
     autoUpdaterMock.allowPrerelease = false
     autoUpdaterMock.allowDowngrade = false
     autoUpdaterMock.disableDifferentialDownload = false

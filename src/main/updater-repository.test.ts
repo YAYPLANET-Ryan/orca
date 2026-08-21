@@ -9,6 +9,7 @@ import {
   getReleasesAtomFeedUrl,
   getReleasesDownloadBase,
   getUpdateRepository,
+  isCustomUpdateRepository,
   resetUpdateRepositoryCacheForTest,
   resolveChannelRepository
 } from './updater-repository'
@@ -61,6 +62,7 @@ describe('getUpdateRepository', () => {
   it('takes owner and repo from app-update.yml', () => {
     useResourcesDir(CUSTOM)
     expect(getUpdateRepository()).toEqual({ owner: 'YAYPLANET-Ryan', repo: 'orca' })
+    expect(isCustomUpdateRepository()).toBe(true)
     expect(getLatestReleaseDownloadUrl()).toBe(
       'https://github.com/YAYPLANET-Ryan/orca/releases/latest/download'
     )
@@ -87,6 +89,7 @@ describe('getUpdateRepository', () => {
     useResourcesDir(null)
     expect(error).not.toHaveBeenCalled()
     expect(getUpdateRepository()).toEqual({ owner: 'stablyai', repo: 'orca' })
+    expect(isCustomUpdateRepository()).toBe(false)
     expect(getLatestReleaseDownloadUrl()).toBe(
       'https://github.com/stablyai/orca/releases/latest/download'
     )

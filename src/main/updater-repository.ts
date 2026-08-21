@@ -49,9 +49,10 @@ function readConfiguredRepository(): UpdateRepository {
     if (!existsSync(configPath)) {
       return { owner: DEFAULT_OWNER, repo: DEFAULT_REPO }
     }
-    const parsed = parse(readFileSync(configPath, 'utf-8')) as
-      | { owner?: unknown; repo?: unknown }
-      | null
+    const parsed = parse(readFileSync(configPath, 'utf-8')) as {
+      owner?: unknown
+      repo?: unknown
+    } | null
     const owner = typeof parsed?.owner === 'string' ? parsed.owner.trim() : ''
     const repo = typeof parsed?.repo === 'string' ? parsed.repo.trim() : ''
     if (!owner || !repo) {
@@ -72,6 +73,11 @@ export function getUpdateRepository(): UpdateRepository {
     cached = readConfiguredRepository()
   }
   return cached
+}
+
+export function isCustomUpdateRepository(): boolean {
+  const { owner, repo } = getUpdateRepository()
+  return owner !== DEFAULT_OWNER || repo !== DEFAULT_REPO
 }
 
 export function getReleasesAtomFeedUrl(): string {
