@@ -50,6 +50,22 @@ jobs:
         shell: pwsh
         run: pnpm install --no-frozen-lockfile --ignore-scripts
 
+      - name: Verify CEO customization and session preservation
+        shell: pwsh
+        run: |
+          pnpm exec vitest run --config config/vitest.config.ts `
+            src/renderer/src/components/ceo-office `
+            src/renderer/src/components/sidebar/WorktreeCardAgents.activation.test.tsx `
+            src/main/updater-repository.test.ts `
+            src/main/updater-release-builds.test.ts `
+            src/main/updater.quit-and-install.test.ts `
+            src/main/persistence-workspace-session-scrollback.test.ts `
+            src/main/persistence-host-partitioned-sessions.test.ts `
+            src/main/ai-vault/session-parse-cache-persistence.test.ts `
+            src/renderer/src/lib/workspace-session-persistence-gate.test.ts `
+            src/renderer/src/lib/workspace-session-host-persistence.test.ts `
+            src/renderer/src/lib/resume-sleeping-agent-session.test.ts
+
       - name: Resolve release version
         shell: pwsh
         env:
