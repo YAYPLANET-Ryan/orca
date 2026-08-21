@@ -2,7 +2,10 @@ name: Custom Windows Release
 
 on:
   push:
-    branches: [ryan/ceo-office-sidebar, ryan/ceo-office-sidebar-latest]
+    branches:
+      - ryan/ceo-office-sidebar
+      - ryan/ceo-office-sidebar-latest
+      - 'ryan/ceo-office-sidebar-release-*'
   workflow_call:
   workflow_dispatch:
     inputs:
