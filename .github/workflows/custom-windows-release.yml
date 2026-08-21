@@ -133,6 +133,17 @@ jobs:
             exit 1
           }
 
+      - name: Retain verified release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-windows-release-${{ env.ORCA_RELEASE_VERSION }}
+          path: |
+            dist/orca-windows-setup.exe
+            dist/orca-windows-setup.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish Windows release
         shell: pwsh
         env:
