@@ -35,8 +35,11 @@ test('copies only a matching canonical release into the legacy feed', () => {
   assert.match(workflow, /Assets are copied unchanged/)
 })
 
-test('gates sidebar and cold-restore regressions before release', () => {
+test('gates sidebar, renderer-crash, and cold-restore regressions before release', () => {
   assert.match(workflow, /worktree-title-derived-agent-rows\.test\.ts/)
   assert.match(workflow, /pty-connection-cold-restore-agent-resume\.test\.ts/)
   assert.match(workflow, /session-restored-banner-pane-state\.test\.tsx/)
+  assert.match(workflow, /createMainWindow-renderer-crash-recovery\.test\.ts/)
+  assert.match(workflow, /daemon-pty-adapter-cold-restore-reanchor\.test\.ts/)
+  assert.match(workflow, /attach-main-window-services\.test\.ts/)
 })
