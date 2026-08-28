@@ -14,6 +14,13 @@ test('keeps the CEO Office repository as the packaged update feed', () => {
   assert.match(workflow, /repo:\\s\*orca-ceo-office/)
 })
 
+test('versions the build from verified source and the Korea release date', () => {
+  assert.match(workflow, /require\('\.\/package\.json'\)\.version/)
+  assert.match(workflow, /Source base \$base is older than published custom base/)
+  assert.match(workflow, /Korea Standard Time/)
+  assert.doesNotMatch(workflow, /repos\/stablyai\/orca\/releases\/latest/)
+})
+
 test('separates canonical release and one-time legacy bridge branches', () => {
   assert.match(workflow, /ryan\/ceo-office-sidebar-release-\*/)
   assert.match(workflow, /ryan\/ceo-office-sidebar-bridge-\*/)
