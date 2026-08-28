@@ -55,7 +55,8 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
     result: PtyConnectResult | string | void,
     staleSessionId?: string | null,
     coldRestoreStartup?: ColdRestoreAgentResumeStartup | null,
-    attemptGeneration = session.transportStreamGeneration
+    attemptGeneration = session.transportStreamGeneration,
+    coldRestoreAgentResumeRequired = false
   ): Promise<boolean> => {
     if (session.disposed) {
       return false
@@ -256,6 +257,7 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       fetchSshMainModelReattachSnapshot,
       shouldApplyStructuralPayload,
       coldRestoreStartup,
+      coldRestoreAgentResumeRequired,
       reattachPayloadApplied: !shouldApplyStructuralPayload
     }
     const { applyReattachPayload, fitAfterReattachRestore } = createReattachPayloadHandlers(

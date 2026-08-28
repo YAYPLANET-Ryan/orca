@@ -70,6 +70,7 @@ function createContext(overrides: Partial<ReattachPayloadContext>): ReattachPayl
     fetchSshMainModelReattachSnapshot: async () => null,
     shouldApplyStructuralPayload: true,
     coldRestoreStartup: undefined,
+    coldRestoreAgentResumeRequired: false,
     reattachPayloadApplied: false,
     ...overrides
   }

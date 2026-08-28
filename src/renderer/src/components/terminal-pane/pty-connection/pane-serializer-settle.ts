@@ -216,7 +216,8 @@ export function bindSettlePaneSerializer(session: ConnectPanePtySession): void {
     // upgrade — the pane would keep claiming a session it never got back.
     if (
       sessionRestoredBannerShown === reason ||
-      sessionRestoredBannerShown === 'resume-unavailable'
+      sessionRestoredBannerShown === 'resume-unavailable' ||
+      (sessionRestoredBannerShown === 'resume-required' && reason === 'restored')
     ) {
       return
     }

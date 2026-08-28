@@ -37,7 +37,7 @@ export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
       (candidate) => candidate.id === session.deps.tabId
     )
     const registeredLaunchAgent =
-      state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity.agentType
+      state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity?.agentType
     return (
       tab?.launchAgent ??
       session.paneStartup?.launchAgent ??
@@ -60,7 +60,7 @@ export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
   session.paneHasKnownAgentIdentity = (): boolean => {
     const state = useAppStore.getState()
     const registeredLaunchAgent =
-      state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity.agentType
+      state.agentLaunchConfigByPaneKey[session.cacheKey]?.identity?.agentType
     return (
       Boolean(state.paneForegroundAgentByPaneKey[session.cacheKey]?.agent) ||
       session.paneHasLiveHookAgentIcon(state) ||

@@ -4,6 +4,7 @@ import type {
   SleepingAgentSessionRecord
 } from '../../../../../shared/agent-session-resume'
 import type { buildAgentResumeStartupPlan } from '@/lib/tui-agent-startup'
+import type { SessionRestoredBannerReason } from '../session-restored-banner-pane-state'
 
 export type PendingStartupCommand = {
   command: string
@@ -12,6 +13,8 @@ export type PendingStartupCommand = {
 
 export type FreshSpawnOptions = {
   forceBlankRestoredViewport?: boolean
+  inheritStartupCommand?: boolean
+  restoredBannerReason?: SessionRestoredBannerReason
 }
 
 export type ColdRestoreAgentResumeStartup = PendingStartupCommand & {

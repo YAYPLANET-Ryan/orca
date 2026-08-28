@@ -2009,7 +2009,8 @@ export function createRemoteRuntimePtyTransport(
           }
         }
 
-        const commandToSend = options.command ?? command
+        const commandToSend =
+          options.inheritStartupCommand === false ? undefined : (options.command ?? command)
         const startupCommandDeliveryToSend =
           options.startupCommandDelivery ?? startupCommandDelivery
         const envToSend = options.env ?? env
@@ -2017,7 +2018,8 @@ export function createRemoteRuntimePtyTransport(
         const launchConfigToSend = options.launchConfig ?? launchConfig
         const resumeProviderSessionToSend = options.resumeProviderSession ?? resumeProviderSession
         const launchTokenToSend = options.launchToken ?? launchToken
-        const launchAgentToSend = options.launchAgent ?? launchAgent
+        const launchAgentToSend =
+          options.inheritStartupCommand === false ? undefined : (options.launchAgent ?? launchAgent)
         const legacyCreateParams = {
           worktree: toRuntimeTerminalWorktreeSelector(worktreeId),
           clientMutationId: terminalCreateMutationId,

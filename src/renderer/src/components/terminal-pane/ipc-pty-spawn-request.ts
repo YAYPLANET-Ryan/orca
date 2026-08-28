@@ -39,7 +39,10 @@ export async function spawnIpcPty(
     ...((connectOptions.envToDelete ?? envToDelete)
       ? { envToDelete: connectOptions.envToDelete ?? envToDelete }
       : {}),
-    command: connectOptions.command ?? command,
+    command:
+      connectOptions.inheritStartupCommand === false
+        ? undefined
+        : (connectOptions.command ?? command),
     ...((connectOptions.commandDelivery ?? commandDelivery)
       ? { commandDelivery: connectOptions.commandDelivery ?? commandDelivery }
       : {}),
@@ -52,7 +55,8 @@ export async function spawnIpcPty(
     ...((connectOptions.launchToken ?? launchToken)
       ? { launchToken: connectOptions.launchToken ?? launchToken }
       : {}),
-    ...((connectOptions.launchAgent ?? launchAgent)
+    ...(connectOptions.inheritStartupCommand !== false &&
+    (connectOptions.launchAgent ?? launchAgent)
       ? { launchAgent: connectOptions.launchAgent ?? launchAgent }
       : {}),
     ...((connectOptions.startupCommandDelivery ?? startupCommandDelivery)

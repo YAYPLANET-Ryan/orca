@@ -17,6 +17,29 @@ import type { ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
 export function bindBuildColdRestoreAgentResumeStartup(session: ConnectPanePtySession): void {
+  session.shouldRequireManualColdRestoreAgentResume = (): boolean => {
+    if (session.pendingStartupCommand || session.isLegacyWorkerAutomaticResumeBlocked()) {
+      return false
+    }
+    const state = useAppStore.getState()
+    const entry = state.agentStatusByPaneKey[session.cacheKey]
+    const sleepingRecord = session.getSleepingRecordForPane(state)?.record
+    const useLiveEntry = entry && entry.state !== 'done'
+    const agent =
+      (useLiveEntry ? entry.agentType : sleepingRecord?.agent) ??
+      session.resolveExpectedLaunchTuiAgent()
+    if (!agent || !isResumableTuiAgent(agent)) {
+      return false
+    }
+    const providerSession = normalizeAgentProviderSession(
+      useLiveEntry ? entry.providerSession : sleepingRecord?.providerSession
+    )
+    // Why: replaying the tab's original `codex`/`claude` launch command without
+    // an exact provider identity silently creates a new conversation. Keep the
+    // recovered scrollback and launch a shell only so the user can select the
+    // correct historical session instead of losing track of it behind a clone.
+    return providerSession === null
+  }
   session.buildColdRestoreAgentResumeStartup = (): ColdRestoreAgentResumeStartup | null => {
     if (session.pendingStartupCommand) {
       return null

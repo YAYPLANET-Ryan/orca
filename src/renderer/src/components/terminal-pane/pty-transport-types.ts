@@ -144,6 +144,10 @@ export type PtyTransport = {
      *  Ignored by remote-runtime transports (not gate-markable). */
     initiallyHidden?: boolean
     command?: string
+    /** False forces a shell-only spawn without inheriting the transport's agent
+     *  command or launch identity. Recovery uses this when the old pane is known
+     *  to be an agent but its provider-session identity was never captured. */
+    inheritStartupCommand?: boolean
     commandDelivery?: 'renderer' | 'provider'
     env?: Record<string, string>
     envToDelete?: string[]

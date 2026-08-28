@@ -23,6 +23,8 @@ export function startDeferredSessionReattach(
 
   let expiredReattachError = false
   const coldRestoreStartup = session.buildColdRestoreAgentResumeStartup()
+  const coldRestoreAgentResumeRequired =
+    !coldRestoreStartup && session.shouldRequireManualColdRestoreAgentResume()
   const outputCallbacks = session.captureTransportOutputCallbacks(
     (message) => {
       if (isSshSessionExpiredError(message)) {
@@ -44,6 +46,7 @@ export function startDeferredSessionReattach(
     rows: session.rows,
     sessionId: deferredReattachSessionId,
     ...(coldRestoreStartup?.command ? { command: coldRestoreStartup.command } : {}),
+    ...(coldRestoreAgentResumeRequired ? { inheritStartupCommand: false } : {}),
     ...(coldRestoreStartup?.env
       ? { env: session.mergeStartupEnvWithPaneIdentity(coldRestoreStartup.env) }
       : {}),
@@ -98,7 +101,8 @@ export function startDeferredSessionReattach(
         result,
         deferredReattachSessionId,
         coldRestoreStartup,
-        outputCallbacks.generation
+        outputCallbacks.generation,
+        coldRestoreAgentResumeRequired
       )
       session.finishReattachLiveDataDeferral(accepted, outputCallbacks.generation)
       const gen = await preSignalPromise
