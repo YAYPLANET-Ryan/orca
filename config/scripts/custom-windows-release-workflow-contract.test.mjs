@@ -14,6 +14,7 @@ test('keeps the CEO Office repository as the packaged update feed', () => {
   assert.match(workflow, /repo:\\s\*orca-ceo-office/)
   assert.match(workflow, /updater-auto-download\.test\.ts/)
   assert.match(workflow, /updater\.startup-scheduling\.test\.ts/)
+  assert.match(workflow, /register-app-menu\.test\.ts/)
 })
 
 test('versions the build from verified source and the Korea release date', () => {

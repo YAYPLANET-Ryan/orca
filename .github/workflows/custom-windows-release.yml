@@ -89,6 +89,10 @@ jobs:
             src/renderer/src/lib/workspace-session-persistence-gate.test.ts `
             src/renderer/src/lib/workspace-session-host-persistence.test.ts `
             src/renderer/src/lib/resume-sleeping-agent-session.test.ts
+          # Keep the supported manual update path gated in its own worker process. Running this
+          # menu suite beside the fake-timer updater suite can make Vitest advance the 24h timer twice.
+          pnpm exec vitest run --config config/vitest.config.ts `
+            src/main/menu/register-app-menu.test.ts
 
       - name: Resolve release version
         shell: pwsh
