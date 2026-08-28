@@ -17,6 +17,23 @@ test('keeps the CEO Office repository as the packaged update feed', () => {
   assert.match(workflow, /register-app-menu\.test\.ts/)
 })
 
+test('isolates fake-timer updater gates from parallel release regressions', () => {
+  const command = 'pnpm exec vitest run --config config/vitest.config.ts'
+  const invocations = workflow.match(/pnpm exec vitest run --config config\/vitest\.config\.ts/g) ?? []
+  assert.equal(invocations.length, 3)
+  const first = workflow.indexOf(command)
+  const second = workflow.indexOf(command, first + command.length)
+  const third = workflow.indexOf(command, second + command.length)
+  const coreSuite = workflow.slice(first, second)
+  const startupSuite = workflow.slice(second, third)
+  const menuSuite = workflow.slice(third)
+  assert.doesNotMatch(coreSuite, /updater\.startup-scheduling\.test\.ts/)
+  assert.doesNotMatch(coreSuite, /register-app-menu\.test\.ts/)
+  assert.match(startupSuite, /updater\.startup-scheduling\.test\.ts/)
+  assert.doesNotMatch(startupSuite, /register-app-menu\.test\.ts/)
+  assert.match(menuSuite, /register-app-menu\.test\.ts/)
+})
+
 test('versions the build from verified source and the Korea release date', () => {
   assert.match(workflow, /require\('\.\/package\.json'\)\.version/)
   assert.match(workflow, /Source base \$base is older than published custom base/)

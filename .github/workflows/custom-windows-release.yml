@@ -80,7 +80,6 @@ jobs:
             src/main/window/attach-main-window-services.test.ts `
             src/main/updater-repository.test.ts `
             src/main/updater-auto-download.test.ts `
-            src/main/updater.startup-scheduling.test.ts `
             src/main/updater-release-builds.test.ts `
             src/main/updater.quit-and-install.test.ts `
             src/main/persistence-workspace-session-scrollback.test.ts `
@@ -89,8 +88,12 @@ jobs:
             src/renderer/src/lib/workspace-session-persistence-gate.test.ts `
             src/renderer/src/lib/workspace-session-host-persistence.test.ts `
             src/renderer/src/lib/resume-sleeping-agent-session.test.ts
-          # Keep the supported manual update path gated in its own worker process. Running this
-          # menu suite beside the fake-timer updater suite can make Vitest advance the 24h timer twice.
+          # Keep timer-driven updater scheduling isolated from the wider parallel suite. Under
+          # contention, Vitest's fake-timer wait loop can advance the 24h callback twice.
+          pnpm exec vitest run --config config/vitest.config.ts `
+            src/main/updater.startup-scheduling.test.ts
+          # Keep the supported manual update path in a third worker process. Running this menu
+          # suite beside the fake-timer updater suite can also advance the 24h timer twice.
           pnpm exec vitest run --config config/vitest.config.ts `
             src/main/menu/register-app-menu.test.ts
 
