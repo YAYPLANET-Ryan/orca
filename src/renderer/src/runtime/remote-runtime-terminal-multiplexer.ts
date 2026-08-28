@@ -14,6 +14,7 @@ import {
   parseTerminalSnapshotUnavailableReason,
   type TerminalSnapshotUnavailableReason
 } from '../../../shared/terminal-snapshot-unavailability'
+import { parseTerminalKittyKeyboardFlags } from '../../../shared/terminal-kitty-keyboard-flags'
 import { e2eConfig, e2eDisableRemoteTerminalStallRecovery } from '@/lib/e2e-config'
 import { recordRendererCrashBreadcrumb } from '@/lib/crash-breadcrumb-recorder'
 import { deliverTerminalDataWithDeferredCredit } from '@/lib/pane-manager/terminal-delivery-credit'
@@ -60,7 +61,14 @@ type TerminalMultiplexEvent =
 
 export type RemoteRuntimeMultiplexedTerminalCallbacks = {
   onData: (data: string, meta?: { seq?: number; rawLength?: number; transformed?: boolean }) => void
-  onSnapshot: (data: string, meta?: { pendingEscapeTailAnsi?: string }) => void
+  onSnapshot: (
+    data: string,
+    meta?: {
+      pendingEscapeTailAnsi?: string
+      seq?: number
+      kittyKeyboardFlags?: number
+    }
+  ) => void
   onSubscribed?: () => void
   onOutputPauseCapability?: () => void
   onEnd?: () => void
@@ -84,6 +92,10 @@ export type RemoteRuntimeSnapshotImage = {
   seq?: number
   source?: 'headless' | 'renderer'
   pendingEscapeTailAnsi?: string
+  /** Effective kitty flags the HOST proved at this image's own `seq`. Absent
+   *  from any host that predates the field — the pane tracker then stays
+   *  unproven and commits raw text instead of guessing zero. */
+  kittyKeyboardFlags?: number
 }
 
 /** Transient causes the host itself reported: a request reached it and it declined to serialize now. */
@@ -197,6 +209,7 @@ type RemoteRuntimeSnapshotInfo = {
   rows?: number
   seq?: number
   source?: 'headless' | 'renderer'
+  kittyKeyboardFlags?: number
   requestId?: number
   truncated?: boolean
   unavailable?: TerminalSnapshotUnavailableReason
@@ -227,12 +240,17 @@ export const REMOTE_TERMINAL_SNAPSHOT_TOO_LARGE =
   'Remote terminal snapshot exceeded the 2 MiB replay limit; live output will continue.'
 
 type E2eRemoteTerminalMultiplexAckGateSnapshot = {
+  activeStreams: { environmentId: string; streamId: number; terminal: string }[]
   droppedOutputBytes: number
   droppedOutputFrames: number
   heldTerminalCount: number
   heldStreamCount: number
   heldAckChars: number
   releasedAckChars: number
+  streamSubscribeCount: number
+  streamUnsubscribeCount: number
+  transportSubscribeCount: number
+  transportUnsubscribeCount: number
 }
 
 type E2eRemoteTerminalMultiplexAckGateApi = {
@@ -255,16 +273,22 @@ const e2eDroppedOutputStreams = new Set<RemoteRuntimeMultiplexedTerminalState>()
 let e2eDroppedOutputBytes = 0
 let e2eDroppedOutputFrames = 0
 let e2eReleasedRemoteAckChars = 0
+let e2eStreamSubscribeCount = 0
+let e2eStreamUnsubscribeCount = 0
+let e2eTransportSubscribeCount = 0
+let e2eTransportUnsubscribeCount = 0
 
 function shouldHoldE2eRemoteTerminalAck(terminal: string): boolean {
   return e2eConfig.exposeStore && e2eHeldRemoteAckTerminals.has(terminal)
 }
 
 function getE2eRemoteAckSnapshot(): E2eRemoteTerminalMultiplexAckGateSnapshot {
+  const activeStreams: E2eRemoteTerminalMultiplexAckGateSnapshot['activeStreams'] = []
   let heldStreamCount = 0
   let heldAckChars = 0
-  for (const multiplexer of multiplexers.values()) {
+  for (const [environmentId, multiplexer] of multiplexers) {
     for (const stream of multiplexer.getStreamsForE2e()) {
+      activeStreams.push({ environmentId, streamId: stream.streamId, terminal: stream.terminal })
       if (stream.heldAckBytes > 0) {
         heldStreamCount += 1
         heldAckChars += stream.heldAckBytes
@@ -272,13 +296,27 @@ function getE2eRemoteAckSnapshot(): E2eRemoteTerminalMultiplexAckGateSnapshot {
     }
   }
   return {
+    activeStreams,
     droppedOutputBytes: e2eDroppedOutputBytes,
     droppedOutputFrames: e2eDroppedOutputFrames,
     heldTerminalCount: e2eHeldRemoteAckTerminals.size,
     heldStreamCount,
     heldAckChars,
-    releasedAckChars: e2eReleasedRemoteAckChars
+    releasedAckChars: e2eReleasedRemoteAckChars,
+    streamSubscribeCount: e2eStreamSubscribeCount,
+    streamUnsubscribeCount: e2eStreamUnsubscribeCount,
+    transportSubscribeCount: e2eTransportSubscribeCount,
+    transportUnsubscribeCount: e2eTransportUnsubscribeCount
   }
+}
+
+function unsubscribeRuntimeEnvironmentForE2e(
+  subscription: RuntimeEnvironmentSubscriptionHandle
+): void {
+  if (e2eConfig.exposeStore) {
+    e2eTransportUnsubscribeCount += 1
+  }
+  subscription.unsubscribe()
 }
 
 function releaseE2eRemoteTerminalAcks(): void {
@@ -451,14 +489,18 @@ class RemoteRuntimeTerminalMultiplexer {
 
     const stream: RemoteRuntimeMultiplexedTerminal = {
       streamId,
-      sendInput: (text) => this.sendInput(state, text),
+      sendInput: (text) => this.isRegisteredStream(state) && this.sendInput(state, text),
       resize: (cols, rows) =>
+        this.isRegisteredStream(state) &&
         this.sendFrame(
           streamId,
           TerminalStreamOpcode.Resize,
           encodeTerminalStreamJson({ cols, rows })
         ),
       claimViewport: (cols, rows) => {
+        if (!this.isRegisteredStream(state)) {
+          return false
+        }
         const claimed = this.sendFrame(
           streamId,
           TerminalStreamOpcode.ClaimViewport,
@@ -550,6 +592,9 @@ class RemoteRuntimeTerminalMultiplexer {
     const connectPromise = new Promise<void>((resolve, reject) => {
       this.readyResolver = resolve
       this.readyRejecter = reject
+      if (e2eConfig.exposeStore) {
+        e2eTransportSubscribeCount += 1
+      }
       void window.api.runtimeEnvironments
         .subscribe(
           {
@@ -577,7 +622,7 @@ class RemoteRuntimeTerminalMultiplexer {
             // Why: close/error can arrive before subscribe() resolves because
             // preload listens before ipcMain.handle() returns. The multiplexer
             // may already be released; do not retain the late handle.
-            subscription.unsubscribe()
+            unsubscribeRuntimeEnvironmentForE2e(subscription)
             return
           }
           this.subscription = subscription
@@ -879,13 +924,16 @@ class RemoteRuntimeTerminalMultiplexer {
               rows: info?.rows ?? 24,
               seq: info?.seq,
               source: info?.source,
+              kittyKeyboardFlags: info?.kittyKeyboardFlags,
               pendingEscapeTailAnsi: info?.pendingEscapeTailAnsi
             }
           })
           clearPendingSnapshotRequest(stream)
         } else if (target === 'initial') {
           stream.callbacks.onSnapshot(data ?? '', {
-            pendingEscapeTailAnsi: info?.pendingEscapeTailAnsi
+            pendingEscapeTailAnsi: info?.pendingEscapeTailAnsi,
+            seq: info?.seq,
+            kittyKeyboardFlags: info?.kittyKeyboardFlags
           })
         } else if (target === 'recovery') {
           // Why: a server-pushed recovery snapshot replaces terminal state
@@ -893,7 +941,9 @@ class RemoteRuntimeTerminalMultiplexer {
           // An empty snapshot is still applied so stale dropped output does
           // not linger on a terminal the model says is blank.
           stream.callbacks.onSnapshot(`\x1b[2J\x1b[3J\x1b[H${data ?? ''}`, {
-            pendingEscapeTailAnsi: info?.pendingEscapeTailAnsi
+            pendingEscapeTailAnsi: info?.pendingEscapeTailAnsi,
+            seq: info?.seq,
+            kittyKeyboardFlags: info?.kittyKeyboardFlags
           })
         }
       } else if (matchesPendingRequest) {
@@ -1163,6 +1213,11 @@ class RemoteRuntimeTerminalMultiplexer {
     )
   }
 
+  // Why: sendFrame gates on readiness alone; a dropped handle would still report success.
+  private isRegisteredStream(stream: RemoteRuntimeMultiplexedTerminalState): boolean {
+    return this.streams.get(stream.streamId) === stream
+  }
+
   private sendInput(stream: RemoteRuntimeMultiplexedTerminalState, text: string): boolean {
     const sent = this.sendFrame(
       stream.streamId,
@@ -1345,6 +1400,13 @@ class RemoteRuntimeTerminalMultiplexer {
     }
     try {
       this.subscription.sendBinary(encodeTerminalStreamFrame({ opcode, streamId, seq: 0, payload }))
+      if (e2eConfig.exposeStore) {
+        if (opcode === TerminalStreamOpcode.Subscribe) {
+          e2eStreamSubscribeCount += 1
+        } else if (opcode === TerminalStreamOpcode.Unsubscribe) {
+          e2eStreamUnsubscribeCount += 1
+        }
+      }
       return true
     } catch (error) {
       this.handleClose(
@@ -1385,7 +1447,9 @@ class RemoteRuntimeTerminalMultiplexer {
     this.readyResolver = null
     this.readyRejecter = null
     this.subscription = null
-    closingSubscription?.unsubscribe()
+    if (closingSubscription) {
+      unsubscribeRuntimeEnvironmentForE2e(closingSubscription)
+    }
     this.streams.clear()
     // Why: close callbacks may resubscribe synchronously; release first so every replacement shares the new environment multiplexer.
     this.releaseIfCurrent(this.environmentId, this)
@@ -1407,7 +1471,9 @@ class RemoteRuntimeTerminalMultiplexer {
     if (this.streams.size > 0) {
       return
     }
-    this.subscription?.unsubscribe()
+    if (this.subscription) {
+      unsubscribeRuntimeEnvironmentForE2e(this.subscription)
+    }
     this.subscription = null
     this.connectPromise = null
     this.ready = false
@@ -1455,6 +1521,10 @@ export function resetRemoteRuntimeTerminalMultiplexersForTests(): void {
   e2eHeldRemoteAckTerminals.clear()
   resetE2eDroppedRemoteOutput()
   e2eReleasedRemoteAckChars = 0
+  e2eStreamSubscribeCount = 0
+  e2eStreamUnsubscribeCount = 0
+  e2eTransportSubscribeCount = 0
+  e2eTransportUnsubscribeCount = 0
 }
 
 function concatBytes(chunks: Uint8Array<ArrayBufferLike>[]): Uint8Array<ArrayBufferLike> {
@@ -1529,6 +1599,7 @@ function decodeSnapshotInfo(
     truncated?: unknown
     unavailable?: unknown
     pendingEscapeTailAnsi?: unknown
+    kittyKeyboardFlags?: unknown
   }>(payload)
   if (!raw) {
     return null
@@ -1538,6 +1609,8 @@ function decodeSnapshotInfo(
     rows: typeof raw.rows === 'number' ? raw.rows : undefined,
     seq: typeof raw.seq === 'number' ? raw.seq : undefined,
     source: raw.source === 'headless' || raw.source === 'renderer' ? raw.source : undefined,
+    // Negative, fractional, and unsafe values are treated as absent, never clamped.
+    kittyKeyboardFlags: parseTerminalKittyKeyboardFlags(raw.kittyKeyboardFlags),
     requestId: typeof raw.requestId === 'number' ? raw.requestId : undefined,
     truncated: raw.truncated === true,
     unavailable: parseTerminalSnapshotUnavailableReason(raw.unavailable),

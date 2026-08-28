@@ -209,6 +209,7 @@ export const electronViteConfig: UserConfig = {
           index: resolve('src/main/index.ts'),
           // Why: sandboxed webview preloads cannot load Rollup helper chunks.
           'browser-window-close-preload': resolve('src/preload/browser-window-close.ts'),
+          'doc-preview-link-preload': resolve('src/preload/doc-preview-link.ts'),
           'daemon-entry': resolve('src/main/daemon/daemon-entry.ts'),
           'plugin-host-entry': resolve('src/main/plugins/plugin-host-entry.ts'),
           'computer-sidecar': resolve('src/main/computer/sidecar-entry.ts'),
@@ -216,6 +217,15 @@ export const electronViteConfig: UserConfig = {
           'warp-theme-parser-worker': resolve('src/main/warp-themes/warp-theme-parser-worker.ts'),
           'session-scanner-opencode-sqlite-worker-entry': resolve(
             'src/main/ai-vault/session-scanner-opencode-sqlite-worker-entry.ts'
+          ),
+          'session-scanner-worker-entry': resolve(
+            'src/main/ai-vault/session-scanner-worker-entry.ts'
+          ),
+          'session-scanner-service-entry': resolve(
+            'src/main/ai-vault/session-scanner-service-entry.ts'
+          ),
+          'wsl-transcript-fs-process-entry': resolve(
+            'src/main/native-chat/wsl-transcript-fs-process-entry.ts'
           ),
           // Why: libuv spawns processes inline on the calling loop, so the port
           // scan's probe commands run on a worker thread instead of the UI one.
@@ -276,7 +286,7 @@ export const electronViteConfig: UserConfig = {
   preload: {
     build: {
       externalizeDeps: {
-        exclude: ['@electron-toolkit/preload']
+        exclude: ['@electron-toolkit/preload', 'zod']
       }
     }
   },
