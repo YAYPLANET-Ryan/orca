@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  ORCA_RELEASE_REPOSITORY: YAYPLANET-Ryan/orca
   ORCA_UPDATE_OWNER: YAYPLANET-Ryan
   ORCA_UPDATE_REPO: orca
 
@@ -34,6 +35,13 @@ jobs:
           ref: ryan/ceo-office-sidebar
           fetch-depth: 1
 
+      - name: Verify canonical release repository
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REPOSITORY -ne $env:ORCA_RELEASE_REPOSITORY) {
+            throw "Refusing to publish from '$env:GITHUB_REPOSITORY'; canonical release repository is '$env:ORCA_RELEASE_REPOSITORY'."
+          }
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,6 +54,30 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: pnpm install --no-frozen-lockfile --ignore-scripts
+
+      - name: Verify CEO customization and session preservation
+        shell: pwsh
+        run: |
+          pnpm exec vitest run --config config/vitest.config.ts `
+            src/renderer/src/components/ceo-office `
+            src/renderer/src/components/sidebar/WorktreeCardAgents.activation.test.tsx `
+            src/renderer/src/components/sidebar/worktree-title-derived-agent-rows.test.ts `
+            src/renderer/src/components/terminal-pane/pty-connection-cold-restore-agent-resume.test.ts `
+            src/renderer/src/components/terminal-pane/pty-connection/reattach-payload-context.test.ts `
+            src/renderer/src/components/terminal-pane/pty-connection/reattach-payload-ssh-reconnect-model-paint.test.ts `
+            src/renderer/src/components/terminal-pane/pty-transport-connect-spawn.test.ts `
+            src/renderer/src/components/terminal-pane/remote-runtime-pty-transport-create-handoff.test.ts `
+            src/renderer/src/components/terminal-pane/session-restored-banner-pane-state.test.tsx `
+            src/main/updater-repository.test.ts `
+            src/main/updater-auto-download.test.ts `
+            src/main/updater-release-builds.test.ts `
+            src/main/updater.quit-and-install.test.ts `
+            src/main/persistence-workspace-session-scrollback.test.ts `
+            src/main/persistence-host-partitioned-sessions.test.ts `
+            src/main/ai-vault/session-parse-cache-persistence.test.ts `
+            src/renderer/src/lib/workspace-session-persistence-gate.test.ts `
+            src/renderer/src/lib/workspace-session-host-persistence.test.ts `
+            src/renderer/src/lib/resume-sleeping-agent-session.test.ts
 
       - name: Resolve release version
         shell: pwsh
@@ -114,6 +146,29 @@ jobs:
             exit 1
           }
 
+          $updateConfigPath = "dist/win-unpacked/resources/app-update.yml"
+          if (-not (Test-Path -LiteralPath $updateConfigPath)) {
+            throw "Missing packaged update configuration: $updateConfigPath"
+          }
+          $updateConfig = Get-Content -LiteralPath $updateConfigPath -Raw
+          if ($updateConfig -notmatch '(?m)^owner:\s*YAYPLANET-Ryan\s*$' -or
+              $updateConfig -notmatch '(?m)^repo:\s*orca\s*$' -or
+              $updateConfig -notmatch '(?m)^provider:\s*github\s*$') {
+            throw "Packaged app-update.yml does not point to YAYPLANET-Ryan/orca on GitHub."
+          }
+          Write-Host "Verified packaged update feed: YAYPLANET-Ryan/orca"
+
+      - name: Retain verified release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-windows-release-${{ env.ORCA_RELEASE_VERSION }}
+          path: |
+            dist/orca-windows-setup.exe
+            dist/orca-windows-setup.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish Windows release
         shell: pwsh
         env:
@@ -126,8 +181,8 @@ jobs:
             "dist/latest.yml"
           )
           gh release create $tag @assets `
-            --repo "$env:GITHUB_REPOSITORY" `
+            --repo "$env:ORCA_RELEASE_REPOSITORY" `
             --target "$env:GITHUB_SHA" `
             --title $env:ORCA_RELEASE_VERSION `
-            --notes "Custom Orca Windows build with CEO Office sidebar."
+            --notes "Custom Orca Windows build with CEO Office sidebar and cold-restore session preservation."
           Write-Host "##[notice]Published: $tag"

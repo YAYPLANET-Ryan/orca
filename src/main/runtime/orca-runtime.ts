@@ -21150,7 +21150,7 @@ export class OrcaRuntimeService {
     } catch (err) {
       if (repoWasCreated) {
         // Why: a failed link must not leave a new repo registration or stale host caches behind.
-        this.store?.removeProject?.(initialRepo.id, 'setup-rollback')
+        this.store?.removeProject?.(initialRepo.id)
         this.invalidateResolvedWorktreeCache()
         this.invalidateWorktreeScanCacheForRepo(initialRepo.id)
         invalidateAuthorizedRootsCache()
@@ -22071,9 +22071,9 @@ export class OrcaRuntimeService {
       if (!this.store.removeProjectForHost) {
         throw new Error('runtime_unavailable')
       }
-      this.store.removeProjectForHost(repo.id, hostId, 'rpc')
+      this.store.removeProjectForHost(repo.id, hostId)
     } else {
-      this.store.removeProject(repo.id, 'rpc')
+      this.store.removeProject(repo.id)
     }
     this.terminalTopologyRevisionByRepoId.delete(repo.id)
     this.invalidateResolvedWorktreeCache()
