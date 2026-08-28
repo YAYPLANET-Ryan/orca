@@ -23,7 +23,7 @@ concurrency:
 
 env:
   ORCA_UPDATE_OWNER: YAYPLANET-Ryan
-  ORCA_UPDATE_REPO: orca
+  ORCA_UPDATE_REPO: orca-ceo-office
 
 jobs:
   build-and-publish:
