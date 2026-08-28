@@ -97,6 +97,23 @@ describe('createIpcPtyTransport', () => {
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ resumeProviderSession }))
   })
 
+  it('can suppress the transport startup command for a shell-only recovery', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+    const transport = createIpcPtyTransport({ command: 'codex', launchAgent: 'codex' })
+
+    await transport.connect({
+      url: '',
+      inheritStartupCommand: false,
+      callbacks: {}
+    })
+
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ command: undefined }))
+    expect(spawn).toHaveBeenCalledWith(
+      expect.not.objectContaining({ launchAgent: expect.any(String) })
+    )
+  })
+
   it('exposes the connection identity captured at transport creation', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
 

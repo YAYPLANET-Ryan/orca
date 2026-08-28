@@ -78,6 +78,7 @@ export function bindStartFreshSpawn(session: ConnectPanePtySession): void {
       cols: session.cols,
       rows: session.rows,
       ...(startupOverride?.command ? { command: startupOverride.command } : {}),
+      ...(options.inheritStartupCommand === false ? { inheritStartupCommand: false } : {}),
       ...(session.connectionId &&
       startupOverride?.command &&
       !session.shouldDeliverStartupViaTerminalPaste
@@ -214,6 +215,8 @@ export function bindStartFreshSpawn(session: ConnectPanePtySession): void {
             // Why: main dropped the resume argv, so this pane is a NEW session —
             // the plain restored banner would claim the old one came back.
             session.showSessionRestoredBanner('resume-unavailable')
+          } else if (options.restoredBannerReason) {
+            session.showSessionRestoredBanner(options.restoredBannerReason)
           } else if (coldRestoreOverride?.hasSleepingRecord) {
             session.showSessionRestoredBanner()
           }

@@ -144,6 +144,60 @@ describe('connectPanePty', () => {
   afterEach(async () => {
     await restoreTerminalTestGlobals()
   })
+
+  it.each(['codex', 'claude'] as const)(
+    'cold-restores only a shell when a %s pane has no captured provider session',
+    async (launchAgent) => {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('fresh-pty')
+      transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
+        if (sessionId) {
+          return {
+            id: 'fresh-pty',
+            coldRestore: { scrollback: 'cold-payload', cwd: '/tmp/wt-1' }
+          }
+        }
+        return 'fresh-pty'
+      })
+      transportFactoryQueue.push(transport)
+      mockStoreState = {
+        ...mockStoreState,
+        tabsByWorktree: {
+          'wt-1': [{ id: 'tab-1', ptyId: 'lost-pty', launchAgent }]
+        },
+        agentStatusByPaneKey: {},
+        sleepingAgentSessionsByPaneKey: {}
+      } as StoreState
+
+      const pane = createPane(1)
+      const manager = createManager(1)
+      const deps = createDeps({
+        restoredLeafId: LEAF_1,
+        restoredPtyIdByLeafId: { [LEAF_1]: 'lost-pty' }
+      })
+
+      connectPanePty(pane as never, manager as never, deps as never)
+      await flushAsyncTicks(20)
+      await new Promise((resolve) => setTimeout(resolve, 70))
+
+      expect(pane.terminal.write).toHaveBeenCalledWith(
+        `${RESET_GRAPHIC_RENDITION}cold-payload`,
+        expect.any(Function)
+      )
+      expect(transport.connect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'lost-pty',
+          inheritStartupCommand: false
+        })
+      )
+      expect(transport.connect).not.toHaveBeenCalledWith(
+        expect.objectContaining({ command: expect.any(String) })
+      )
+      expect(deps.onShowSessionRestoredBanner).toHaveBeenCalledTimes(1)
+      expect(deps.onShowSessionRestoredBanner).toHaveBeenCalledWith(1, 'resume-required')
+    }
+  )
+
   it('resumes the provider agent session when daemon reattach cold-restores a fresh shell', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('fresh-pty')

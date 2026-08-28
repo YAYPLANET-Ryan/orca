@@ -269,6 +269,31 @@ describe('createRemoteRuntimePtyTransport', () => {
     )
   })
 
+  it('can suppress the inherited startup command for a shell-only recovery', async () => {
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const transport = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      tabId: 'tab-1',
+      leafId: 'pane:1',
+      command: 'codex',
+      launchAgent: 'codex'
+    })
+
+    await transport.connect({ url: '', inheritStartupCommand: false, callbacks: {} })
+
+    const createCall = runtimeCall.mock.calls.find(
+      ([request]) => request.method === 'terminal.create'
+    )
+    expect(createCall?.[0]).toEqual(
+      expect.objectContaining({
+        params: expect.not.objectContaining({ command: expect.any(String) })
+      })
+    )
+    expect(runtimeCall).not.toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'terminal.createAgentSession' })
+    )
+  })
+
   it('uses connect-time agent identity while the remote host builds the launch', async () => {
     runtimeCall.mockImplementation(async (args: { method?: string }) =>
       args.method === 'status.get'
