@@ -32,6 +32,10 @@ test('copies only a matching canonical release into the legacy feed', () => {
   assert.match(workflow, /release\.target_commitish -ne \$env:GITHUB_SHA/)
   assert.match(workflow, /gh release download \$env:ORCA_BRIDGE_TAG/)
   assert.match(workflow, /--repo "\$env:ORCA_LEGACY_RELEASE_REPOSITORY"/)
+  assert.match(workflow, /ORCA_BRIDGE_ASSET_CONTRACT_B64/)
+  assert.match(workflow, /Get-FileHash -LiteralPath \$assetPath -Algorithm SHA256/)
+  assert.match(workflow, /Canonical asset digest mismatch/)
+  assert.match(workflow, /Legacy asset digest mismatch/)
   assert.match(workflow, /Assets are copied unchanged/)
 })
 
