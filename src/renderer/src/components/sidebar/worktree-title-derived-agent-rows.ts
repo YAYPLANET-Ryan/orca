@@ -20,6 +20,7 @@ import {
   resolveCompatibleAgentTypeForOwner
 } from '../../../../shared/agent-title-owner'
 import { resolvePaneAgentOwner } from '../../../../shared/pane-agent-owner'
+import { isShellProcess } from '../../../../shared/shell-process-detection'
 import { isClaudeIdentityFrameTitle } from '../../../../shared/terminal-title-agent-type'
 
 /** Fixed, not per-process: title rows are a pure projection of the current title, so they are
@@ -143,6 +144,11 @@ function buildTitleDerivedAgentRow(args: {
   // is a separate, stricter question — it decides identity, so it uses ownerAgentType below.
   const title = normalizeCompatibleAgentTitleForOwner(args.title, args.tab.launchAgent)
   const isClaudeAgentsTitle = isClaudeManagementTitle(title)
+  const titleLabel = resolveTitleActivityLabel(title)
+  // A live single-pane PTY keeps its persisted launch owner across restarts,
+  // while a shell title proves the launched agent has exited.
+  const ownerIdentifiesPane =
+    args.ownerAgentType !== null && args.ownerAgentType !== 'unknown' && !isShellProcess(title)
   // Why: `claude agents` is a live Claude Code Agent Teams surface, but the
   // shared detector keeps it neutral so runtime liveness probes do not treat
   // the management/list screen as active work.
@@ -151,8 +157,11 @@ function buildTitleDerivedAgentRow(args: {
   // reads idle instead of vanishing (#10258).
   const status = isClaudeAgentsTitle
     ? 'idle'
-    : (classifyTitleActivity(title) ?? (isCursorAgentTitle(title) ? 'idle' : null))
-  const label = isClaudeAgentsTitle ? 'Claude Code' : resolveTitleActivityLabel(title)
+    : (classifyTitleActivity(title) ??
+      (isCursorAgentTitle(title) || ownerIdentifiesPane ? 'idle' : null))
+  const label = isClaudeAgentsTitle
+    ? 'Claude Code'
+    : (titleLabel ?? (ownerIdentifiesPane ? formatAgentTypeLabel(args.ownerAgentType) : null))
   if (!status || !label) {
     return null
   }
@@ -163,7 +172,9 @@ function buildTitleDerivedAgentRow(args: {
   const orchestration = args.runtimeAgentOrchestrationByPaneKey?.[paneKey]
   const titleAgentType = isClaudeAgentsTitle
     ? 'claude'
-    : resolveTitleDerivedAgentType(title, label, args.ownerAgentType)
+    : titleLabel
+      ? resolveTitleDerivedAgentType(title, titleLabel, args.ownerAgentType)
+      : null
   // Why: a status frame proves activity, not identity, so the resolver drops it.
   // Hook-less agents over SSH (Codex, #8711; OpenCode's '. '/'* ' frames, #8940)
   // surface only decorated task titles; fall back to the pane's known owner instead

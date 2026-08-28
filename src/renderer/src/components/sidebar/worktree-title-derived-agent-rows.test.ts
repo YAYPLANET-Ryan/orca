@@ -110,6 +110,85 @@ describe('buildTitleDerivedAgentRows', () => {
     ])
   })
 
+  it.each([
+    ['codex', 'orca', 'Codex'],
+    ['codex', String.raw`E:\ORCA\02_PERSONAL`, 'Codex'],
+    ['claude', 'feature/session-recovery', 'Claude'],
+    ['gemini', 'session-recovery', 'Gemini']
+  ] as const)(
+    'keeps a live %s pane visible when restart leaves only the generic title %s',
+    (launchAgent, title, expectedLabel) => {
+      const rows = buildWorktreeAgentRows({
+        tabs: [makeTab('tab-1', { launchAgent, title })],
+        entries: [],
+        retained: [],
+        ptyIdsByTabId: { 'tab-1': ['pty-live'] },
+        terminalLayoutsByTabId: { 'tab-1': makeSingleLayout(LEAF_ID_1) },
+        now: 2000
+      })
+
+      expect(rows.map((row) => [row.agentType, row.state, row.entry.prompt])).toEqual([
+        [launchAgent, 'idle', expectedLabel]
+      ])
+    }
+  )
+
+  it.each(['powershell.exe', 'pwsh', 'cmd.exe', String.raw`C:\Windows\System32\cmd.exe`])(
+    'does not turn the shell title %s into an agent row',
+    (title) => {
+      const rows = buildWorktreeAgentRows({
+        tabs: [makeTab('tab-1', { launchAgent: 'codex', title })],
+        entries: [],
+        retained: [],
+        ptyIdsByTabId: { 'tab-1': ['pty-shell'] },
+        terminalLayoutsByTabId: { 'tab-1': makeSingleLayout(LEAF_ID_1) },
+        now: 2000
+      })
+
+      expect(rows).toHaveLength(0)
+    }
+  )
+
+  it('does not attribute a tab owner to one pane of a split layout', () => {
+    const rows = buildWorktreeAgentRows({
+      tabs: [makeTab('tab-1', { launchAgent: 'codex' })],
+      entries: [],
+      retained: [],
+      runtimePaneTitlesByTabId: { 'tab-1': { 1: 'orca', 2: 'powershell.exe' } },
+      ptyIdsByTabId: { 'tab-1': ['pty-left', 'pty-right'] },
+      terminalLayoutsByTabId: { 'tab-1': makeSplitLayout() },
+      now: 2000
+    })
+
+    expect(rows).toHaveLength(0)
+  })
+
+  it('does not turn an unowned generic title into an agent row', () => {
+    const rows = buildWorktreeAgentRows({
+      tabs: [makeTab('tab-1', { title: 'orca' })],
+      entries: [],
+      retained: [],
+      ptyIdsByTabId: { 'tab-1': ['pty-shell'] },
+      terminalLayoutsByTabId: { 'tab-1': makeSingleLayout(LEAF_ID_1) },
+      now: 2000
+    })
+
+    expect(rows).toHaveLength(0)
+  })
+
+  it('does not restore an owned generic title without a live PTY', () => {
+    const rows = buildWorktreeAgentRows({
+      tabs: [makeTab('tab-1', { launchAgent: 'codex', title: 'orca' })],
+      entries: [],
+      retained: [],
+      ptyIdsByTabId: {},
+      terminalLayoutsByTabId: { 'tab-1': makeSingleLayout(LEAF_ID_1) },
+      now: 2000
+    })
+
+    expect(rows).toHaveLength(0)
+  })
+
   it('does not add title-derived rows for panes without a live PTY', () => {
     const rows = buildWorktreeAgentRows({
       tabs: [makeTab('tab-1')],
