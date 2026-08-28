@@ -7,7 +7,8 @@
  * render a slot as null.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { TerminalTab } from '../../../../shared/types'
+import { useShallow } from 'zustand/react/shallow'
+import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import { useAppStore } from '../../store'
 import {
   findActivityTerminalPortal,
@@ -16,9 +17,8 @@ import {
 import { getTerminalTabColdParkRecheckDelayMs } from './terminal-cold-park-recheck-deadlines'
 import {
   TERMINAL_TAB_COLD_PARK_DELAY_MS,
-  selectPairedRuntimeParkingEnvironmentIds,
-  selectColdParkedTerminalTabs,
-  type TerminalTabColdParkCandidate
+  selectPairedRuntimeParkingEnvironmentIdsFromState,
+  selectColdParkedTerminalTabs
 } from './terminal-hidden-view-parking'
 import {
   recordParkVerdictFlips,
@@ -31,11 +31,15 @@ import {
   selectEvictionExemptTerminalTabLayoutKey
 } from './terminal-eviction-exempt-tabs'
 import { selectSleepingRecordParkExemptTabIds } from './sleeping-record-park-exemption'
+import { usePendingStartupParkPresence } from './terminal-pending-startup-park-presence'
+import { canWatcherCoverParkedTerminalTab } from './terminal-parked-tab-watchers'
+import { createTerminalTabActivationOrder } from './terminal-tab-activation-order'
+import { buildTerminalTabColdParkCandidates } from './terminal-tab-park-candidates'
 import {
-  canWatcherCoverParkedTerminalTab,
-  disposeParkedTerminalWatchersForWorktree,
-  syncParkedTerminalTabWatchers
-} from './terminal-parked-tab-watchers'
+  getTerminalParkingAssignmentsKey,
+  getTerminalParkingInputsKey,
+  useParkedTerminalWatcherSynchronization
+} from './use-parked-terminal-watcher-synchronization'
 
 type TerminalOverlayTabAssignment = {
   groupId: string
@@ -61,6 +65,7 @@ export function useTerminalTabColdParking(args: {
   terminalTabs: readonly TerminalTab[]
   assignments: ReadonlyMap<string, TerminalOverlayTabAssignment>
   isWorktreeActive: boolean
+  activeTerminalTabId: string | null
   /** Worktree-level park verdict from Terminal.tsx. */
   coldParkTerminalPanes: boolean
   /** Retention-budget force-park (C1 slice B): unlike ordinary parks, the
@@ -80,32 +85,47 @@ export function useTerminalTabColdParking(args: {
     terminalTabs,
     assignments,
     isWorktreeActive,
+    activeTerminalTabId,
     coldParkTerminalPanes,
     isForceParked = false,
     shouldMeasureHiddenWorktree,
     activityTerminalPortals,
     activationDeferredMountTabIds
   } = args
-  const pendingStartupByTabId = useAppStore((state) => state.pendingStartupByTabId)
+  const terminalParkingInputsKey = useMemo(
+    () => getTerminalParkingInputsKey(terminalTabs),
+    [terminalTabs]
+  )
+  const terminalParkingAssignmentsKey = useMemo(
+    () => getTerminalParkingAssignmentsKey(assignments),
+    [assignments]
+  )
+  const terminalParkingTabsDependency = coldParkTerminalPanes
+    ? terminalParkingInputsKey
+    : terminalTabs
+  const terminalParkingAssignmentsDependency = coldParkTerminalPanes
+    ? terminalParkingAssignmentsKey
+    : assignments
+  const pendingStartupByTabId = usePendingStartupParkPresence(terminalTabs)
   const terminalParkingEnabled = useAppStore(
     (state) => state.settings?.terminalHiddenViewParking !== false
   )
   const terminalSshParkingEnabled = useAppStore(
     (state) => state.settings?.terminalSshViewParking !== false
   )
-  const runtimeStatusByEnvironmentId = useAppStore((state) => state.runtimeStatusByEnvironmentId)
-  const pairedRuntimeParkingEnvironmentIds = useMemo(
-    () => selectPairedRuntimeParkingEnvironmentIds(runtimeStatusByEnvironmentId),
-    [runtimeStatusByEnvironmentId]
+  const pairedRuntimeParkingEnvironmentIds = useAppStore(
+    selectPairedRuntimeParkingEnvironmentIdsFromState
   )
-  const sleepingAgentSessionsByPaneKey = useAppStore(
-    (state) => state.sleepingAgentSessionsByPaneKey
-  )
-  const sleepingRecordOwnedTabIds = useMemo(
-    () => selectSleepingRecordParkExemptTabIds(sleepingAgentSessionsByPaneKey, worktreeId),
-    [sleepingAgentSessionsByPaneKey, worktreeId]
+  // Why the worktree-scoped set, not the record map: the map is app-global, so
+  // subscribing to it re-rendered this worktree on every other worktree's write.
+  const sleepingRecordOwnedTabIds = useAppStore(
+    useShallow((state) =>
+      selectSleepingRecordParkExemptTabIds(state.sleepingAgentSessionsByPaneKey, worktreeId)
+    )
   )
   const terminalTabHiddenSinceRef = useRef(new Map<string, number>())
+  // Why: view switches hide every tab at once, so the park clock cannot rank them.
+  const terminalTabActivationOrderRef = useRef(createTerminalTabActivationOrder())
   // Why (shared measure-clock contract with Terminal.tsx): tab hiddenSince
   // survives a background-measure window so per-tab park deadlines stay in
   // sync with the worktree retention/TTL clock, and a post-measure cool-down
@@ -152,6 +172,7 @@ export function useTerminalTabColdParking(args: {
         terminalTabHiddenSinceRef.current.delete(tabId)
       }
     }
+    terminalTabActivationOrderRef.current.retainTabIds(currentTerminalTabIds)
 
     // Why: measure end starts the re-park cool-down (worktree measure-clock
     // contract) — hiddenSince is preserved through the window, so without the
@@ -171,30 +192,16 @@ export function useTerminalTabColdParking(args: {
       measureParkCooldownUntilRef.current = null
     }
 
-    const candidates: TerminalTabColdParkCandidate[] = terminalTabs.map((terminalTab) => {
-      const assignment = assignments.get(terminalTab.id)
-      const isVisible = Boolean(isWorktreeActive && assignment && assignment.isActiveInGroup)
-      const hasActivityTerminalPortal = portalTabIds.has(terminalTab.id)
-      // Why measuring preserves the clock: the startup probe still needs
-      // mounted panes (selection + render veto below), but deleting
-      // hiddenSince would restart the hysteresis AND desync per-tab deadlines
-      // from the worktree retention/TTL clock on every ~3s probe.
-      if (isVisible || hasActivityTerminalPortal) {
-        terminalTabHiddenSinceRef.current.delete(terminalTab.id)
-      } else if (
-        !shouldMeasureHiddenWorktree &&
-        !terminalTabHiddenSinceRef.current.has(terminalTab.id)
-      ) {
-        terminalTabHiddenSinceRef.current.set(terminalTab.id, nowMs)
-      }
-      return {
-        id: terminalTab.id,
-        ptyId: terminalTab.ptyId,
-        pendingActivationSpawn: terminalTab.pendingActivationSpawn,
-        isVisible,
-        hasActivityTerminalPortal,
-        hiddenSinceMs: terminalTabHiddenSinceRef.current.get(terminalTab.id) ?? null
-      }
+    const candidates = buildTerminalTabColdParkCandidates({
+      terminalTabs,
+      assignments,
+      isWorktreeActive,
+      activeTerminalTabId,
+      portalTabIds,
+      shouldMeasureHiddenWorktree,
+      hiddenSinceByTabId: terminalTabHiddenSinceRef.current,
+      activationOrder: terminalTabActivationOrderRef.current,
+      nowMs
     })
 
     const nextColdParkedTerminalTabIds = selectColdParkedTerminalTabs({
@@ -247,9 +254,10 @@ export function useTerminalTabColdParking(args: {
         timers.set(tabId, timer)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- semantic keys own the tab and assignment dependencies.
   }, [
     activityTerminalPortals,
-    assignments,
+    activeTerminalTabId,
     isWorktreeActive,
     pendingStartupByTabId,
     pairedRuntimeParkingEnvironmentIds,
@@ -257,7 +265,8 @@ export function useTerminalTabColdParking(args: {
     terminalParkingEnabled,
     terminalSshParkingEnabled,
     terminalTabParkingRevision,
-    terminalTabs,
+    terminalParkingAssignmentsDependency,
+    terminalParkingTabsDependency,
     worktreeId
   ])
 
@@ -357,18 +366,14 @@ export function useTerminalTabColdParking(args: {
   // panes — watcher disposal therefore lands before any PTY data IPC can
   // reach a freshly remounted pane, and watcher start lands after the parked
   // pane's unmount capture.
-  useEffect(() => {
-    syncParkedTerminalTabWatchers({
-      worktreeId,
-      tabs: terminalTabs,
-      parkedTabIds: parkedTerminalTabIds,
-      // Why: activation-deferred tabs have no prior pane-owned title slot;
-      // pull main's title-only snapshot when their watcher starts.
-      restoreTitleOnStartTabIds: activationDeferredMountTabIds ?? undefined
-    })
-  }, [activationDeferredMountTabIds, parkedTerminalTabIds, terminalTabs, worktreeId])
-
-  useEffect(() => () => disposeParkedTerminalWatchersForWorktree(worktreeId), [worktreeId])
+  useParkedTerminalWatcherSynchronization({
+    worktreeId,
+    terminalTabs,
+    assignmentsKey: terminalParkingAssignmentsKey,
+    inputsKey: terminalParkingInputsKey,
+    parkedTabIds: parkedTerminalTabIds,
+    activationDeferredMountTabIds
+  })
 
   return parkedTerminalTabIds
 }

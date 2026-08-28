@@ -1,13 +1,20 @@
 [
   {
-    "filePath": "src/renderer/src/lib/agent-background-session-test-state.ts",
+    "filePath": "src/renderer/src/components/automations/automations-page-fixtures.ts",
     "kind": "object-property:title",
-    "text": "Terminal 1",
+    "text": "Nightly #1",
     "dynamic": false,
     "count": 1
   },
   {
-    "filePath": "src/renderer/src/components/sidebar/WorktreeCard.tsx",
+    "filePath": "src/renderer/src/components/automations/automations-page-fixtures.ts",
+    "kind": "object-property:label",
+    "text": "Hermes",
+    "dynamic": false,
+    "count": 1
+  },
+  {
+    "filePath": "src/renderer/src/components/sidebar/worktree-card-meta-row.tsx",
     "kind": "jsx-attribute:label",
     "text": "sidebar",
     "dynamic": false,
