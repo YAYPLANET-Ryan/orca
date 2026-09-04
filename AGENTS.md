@@ -18,6 +18,17 @@ Never use vague names like `helpers`, `utils`, `common`, `misc`, or `shared-stuf
 ## Type Declarations: Prefer `.ts` Over `.d.ts`
 
 # Considerations
+## Worktree Placement — never under `E:/ORCA`
+
+This repository (the Orca app source) is operated from the ORCA workspace machine. **Do not create,
+check out, or use any worktree, clone, or working directory under `E:/ORCA/**` — in particular
+`E:/ORCA/orca/…` (which collides case-insensitively with the retired ORCA path `E:/ORCA/ORCA/`) and
+`E:/ORCA/02_PERSONAL/.worktrees/…`.** ORCA's push gate treats those paths as a policy violation and
+blocks every push from that workspace (2026-09-04, ORCA `AUD-20260903-007`, `PR-059`). Use this
+repository's own worktree root outside `E:/ORCA` (e.g. `E:/orca-app-worktrees/…`) or the path the
+Orca automation assigns outside that tree. The CEO gave this instruction verbally before 2026-09-04;
+it was never written down here, and was violated on 2026-08-28 and 2026-08-31 — hence this section.
+
 ## Worktree Safety
 
 Always use the primary working directory (the worktree) for all file reads and edits. Never follow absolute paths from subagent results that point to the main repo.
